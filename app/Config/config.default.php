@@ -73,6 +73,16 @@ $config = array(
 			'amount' => 5,
 			'expire' => 300,
 		),
+	'Metrics' => array(
+		  'InfluxDB' => array(
+			'url' => 'http://localhost:8086',
+			'token' => 'mytoken',
+			'bucket' => 'mybucket',
+			'org' => 'myorg',
+		  )
+		),
+
+		
 	// Uncomment the following to enable client SSL certificate authentication
 	/*
 	'CertAuth'         =>

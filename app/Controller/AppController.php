@@ -18,6 +18,7 @@ App::uses('RequestRearrangeTool', 'Tools');
  * @property CRUDComponent $CRUD
  * @property IndexFilterComponent $IndexFilter
  * @property RateLimitComponent $RateLimit
+ * @property MetricsComponent $Metrics
  */
 class AppController extends Controller
 {
@@ -54,6 +55,9 @@ class AppController extends Controller
     /** @var User */
     public $User;
 
+    private $microtimeStart;
+    private $microtimeEnd;
+
     public function __construct($id = false, $table = null, $ds = null)
     {
         parent::__construct($id, $table, $ds);
@@ -65,34 +69,37 @@ class AppController extends Controller
     }
 
     public $components = array(
-            'Session',
-            'Auth' => array(
-                'authError' => 'Unauthorised access.',
-                'authenticate' => array(
-                    'Form' => array(
-                        'passwordHasher' => 'Blowfish',
-                        'fields' => array(
-                            'username' => 'email'
-                        )
+        'Session',
+        'Auth' => array(
+            'authError' => 'Unauthorised access.',
+            'authenticate' => array(
+                'Form' => array(
+                    'passwordHasher' => 'Blowfish',
+                    'fields' => array(
+                        'username' => 'email'
                     )
                 )
-            ),
-            'Security',
-            'ACL',
-            'CompressedRequestHandler',
-            'RestResponse',
-            'Flash',
-            'Toolbox',
-            'RateLimit',
-            'IndexFilter',
-            'Deprecation',
-            'RestSearch',
-            'CRUD'
-            //,'DebugKit.Toolbar'
+            )
+        ),
+        'Security',
+        'ACL',
+        'CompressedRequestHandler',
+        'RestResponse',
+        'Flash',
+        'Toolbox',
+        'RateLimit',
+        'IndexFilter',
+        'Deprecation',
+        'RestSearch',
+        'CRUD',
+        'Metrics'
+        //,'DebugKit.Toolbar'
     );
 
     public function beforeFilter()
     {
+        $this->microtimeStart = microtime(true);
+
         $this->_setupBaseurl();
         $this->Auth->loginRedirect = $this->baseurl . '/users/routeafterlogin';
 
@@ -213,11 +220,9 @@ class AppController extends Controller
 
         if (
             !$userLoggedIn &&
-            (
-                $this->params['controller'] !== 'users' ||
+            ($this->params['controller'] !== 'users' ||
                 $this->params['action'] !== 'register' ||
-                empty(Configure::read('Security.allow_self_registration'))
-            )
+                empty(Configure::read('Security.allow_self_registration')))
         ) {
             // REST authentication
             if ($this->_isRest() || $this->_isAutomation()) {
@@ -257,7 +262,7 @@ class AppController extends Controller
                 $this->RestResponse->setHeader('X-Username', $headerValue);
             }
 
-            if (!$this->__verifyUser($user))  {
+            if (!$this->__verifyUser($user)) {
                 $this->_stop(); // just for sure
             }
 
@@ -274,7 +279,7 @@ class AppController extends Controller
 
             $this->set('default_memory_limit', ini_get('memory_limit'));
             if (isset($user['Role']['memory_limit']) && $user['Role']['memory_limit'] !== '') {
-                 ini_set('memory_limit', $user['Role']['memory_limit']);
+                ini_set('memory_limit', $user['Role']['memory_limit']);
             }
             $this->set('default_max_execution_time', ini_get('max_execution_time'));
             if (isset($user['Role']['max_execution_time']) && $user['Role']['max_execution_time'] !== '') {
@@ -312,7 +317,6 @@ class AppController extends Controller
 
             $this->set('loggedInUserName', $this->__convertEmailToName($user['email']));
             $this->__accessMonitor($user);
-
         } else {
             $preAuthActions = array('login', 'register', 'getGpgPublicKey');
             if (!empty(Configure::read('Security.email_otp_enabled'))) {
@@ -516,9 +520,9 @@ class AppController extends Controller
                 }
                 $this->Flash->info($message);
                 $this->Auth->logout();
-                throw new MethodNotAllowedException($message);//todo this should pb be removed?
+                throw new MethodNotAllowedException($message); //todo this should pb be removed?
             } else {
-                $this->Flash->error(__('Warning: MISP is currently disabled for all users. Enable it in Server Settings (Administration -> Server Settings -> MISP tab -> live). An update might also be in progress, you can see the progress in ') , array('params' => array('url' => $this->baseurl . '/servers/updateProgress/', 'urlName' => __('Update Progress')), 'clear' => 1));
+                $this->Flash->error(__('Warning: MISP is currently disabled for all users. Enable it in Server Settings (Administration -> Server Settings -> MISP tab -> live). An update might also be in progress, you can see the progress in '), array('params' => array('url' => $this->baseurl . '/servers/updateProgress/', 'urlName' => __('Update Progress')), 'clear' => 1));
             }
         }
 
@@ -631,7 +635,7 @@ class AppController extends Controller
     private function __logAccess(array $user)
     {
         $logUserIps = Configure::read('MISP.log_user_ips');
-        if (!$logUserIps)  {
+        if (!$logUserIps) {
             return;
         }
 
@@ -675,14 +679,10 @@ class AppController extends Controller
         if (Configure::read('MISP.log_paranoid') || $userMonitoringEnabled) {
             $change = 'HTTP method: ' . $_SERVER['REQUEST_METHOD'] . PHP_EOL . 'Target: ' . $this->here;
             if (
-                (
-                    $this->request->is('post') ||
-                    $this->request->is('put')
-                ) &&
-                (
-                    !empty(Configure::read('MISP.log_paranoid_include_post_body')) ||
-                    $userMonitoringEnabled
-                )
+                ($this->request->is('post') ||
+                    $this->request->is('put')) &&
+                (!empty(Configure::read('MISP.log_paranoid_include_post_body')) ||
+                    $userMonitoringEnabled)
             ) {
                 $payload = $this->request->input();
                 $change .= PHP_EOL . 'Request body: ' . $payload;
@@ -741,10 +741,12 @@ class AppController extends Controller
     {
         if (Configure::read('Security.allow_cors')) {
             // Add CORS headers
-            $this->response->cors($this->request,
+            $this->response->cors(
+                $this->request,
                 explode(',', Configure::read('Security.cors_origins')),
                 ['*'],
-                ['Origin', 'Content-Type', 'Authorization', 'Accept']);
+                ['Origin', 'Content-Type', 'Authorization', 'Accept']
+            );
 
             if ($this->request->is('options')) {
                 // Stop here!
@@ -785,12 +787,15 @@ class AppController extends Controller
 
     public function afterFilter()
     {
+        $this->microtimeEnd = microtime(true);
+        $this->__writeMetrics();
+
         if ($this->isApiAuthed && $this->_isRest() && !Configure::read('Security.authkey_keep_session')) {
             $this->Session->destroy();
         }
     }
 
-    public function queryACL($debugType='findMissingFunctionNames', $content = false)
+    public function queryACL($debugType = 'findMissingFunctionNames', $content = false)
     {
         $this->autoRender = false;
         $this->layout = false;
@@ -807,7 +812,8 @@ class AppController extends Controller
     /*
      * Configure the debugMode view parameter
      */
-    protected function _setupDebugMode() {
+    protected function _setupDebugMode()
+    {
         $this->set('debugMode', (Configure::read('debug') >= 1) ? 'debugOn' : 'debugOff');
     }
 
@@ -815,7 +821,8 @@ class AppController extends Controller
      * Setup & validate the database connection configuration
      * @throws Exception if the configured database is not supported.
      */
-    protected function _setupDatabaseConnection() {
+    protected function _setupDatabaseConnection()
+    {
         // check for a supported datasource configuration
         $dataSourceConfig = ConnectionManager::getDataSource('default')->config;
         if (!isset($dataSourceConfig['encoding'])) {
@@ -860,7 +867,7 @@ class AppController extends Controller
         return $name;
     }
 
-    public function blackhole($type=false)
+    public function blackhole($type = false)
     {
         if ($type === 'csrf') {
             throw new BadRequestException($type);
@@ -1094,9 +1101,9 @@ class AppController extends Controller
         }
         $this->loadModel('Event');
         $duplicates = $this->Event->find('all', array(
-                'fields' => array('Event.uuid', 'count(*) as occurance'),
-                'recursive' => -1,
-                'group' => array('Event.uuid HAVING COUNT(*) > 1'),
+            'fields' => array('Event.uuid', 'count(*) as occurance'),
+            'recursive' => -1,
+            'group' => array('Event.uuid HAVING COUNT(*) > 1'),
         ));
         $counter = 0;
 
@@ -1107,8 +1114,8 @@ class AppController extends Controller
 
         foreach ($duplicates as $duplicate) {
             $events = $this->Event->find('all', array(
-                    'recursive' => -1,
-                    'conditions' => array('uuid' => $duplicate['Event']['uuid'])
+                'recursive' => -1,
+                'conditions' => array('uuid' => $duplicate['Event']['uuid'])
             ));
             foreach ($events as $k => $event) {
                 if ($k > 0) {
@@ -1160,21 +1167,21 @@ class AppController extends Controller
             $job = ClassRegistry::init('Job');
             $job->create();
             $data = array(
-                    'worker' => 'default',
-                    'job_type' => 'upgrade_24',
-                    'job_input' => 'Old database',
-                    'status' => 0,
-                    'retries' => 0,
-                    'org_id' => 0,
-                    'message' => 'Job created.',
+                'worker' => 'default',
+                'job_type' => 'upgrade_24',
+                'job_input' => 'Old database',
+                'status' => 0,
+                'retries' => 0,
+                'org_id' => 0,
+                'message' => 'Job created.',
             );
             $job->save($data);
             $jobId = $job->id;
             $process_id = CakeResque::enqueue(
-                    'default',
-                    'AdminShell',
-                    array('jobUpgrade24', $jobId, $this->Auth->user('id')),
-                    true
+                'default',
+                'AdminShell',
+                array('jobUpgrade24', $jobId, $this->Auth->user('id')),
+                true
             );
             $job->saveField('process_id', $process_id);
             $this->Flash->success(__('Job queued. You can view the progress if you navigate to the active jobs view (administration -> jobs).'));
@@ -1211,13 +1218,13 @@ class AppController extends Controller
                     $this->Log = ClassRegistry::init('Log');
                     $this->Log->create();
                     $log = array(
-                            'org' => 'SYSTEM',
-                            'model' => 'User',
-                            'model_id' => 0,
-                            'email' => 'SYSTEM',
-                            'action' => 'auth_fail',
-                            'title' => 'Failed authentication using external key (' . trim($server[$headerNamespace . $header]) . ') - the user has not arrived from the expected address. Instead the request came from: ' . $server['REMOTE_ADDR'],
-                            'change' => null,
+                        'org' => 'SYSTEM',
+                        'model' => 'User',
+                        'model_id' => 0,
+                        'email' => 'SYSTEM',
+                        'action' => 'auth_fail',
+                        'title' => 'Failed authentication using external key (' . trim($server[$headerNamespace . $header]) . ') - the user has not arrived from the expected address. Instead the request came from: ' . $server['REMOTE_ADDR'],
+                        'change' => null,
                     );
                     $this->Log->save($log);
                     $this->__preAuthException($authName . ' authentication failed. Contact your MISP support for additional information at: ' . Configure::read('MISP.contact'));
@@ -1251,13 +1258,13 @@ class AppController extends Controller
                     $this->Log = ClassRegistry::init('Log');
                     $this->Log->create();
                     $log = array(
-                            'org' => 'SYSTEM',
-                            'model' => 'User',
-                            'model_id' => 0,
-                            'email' => 'SYSTEM',
-                            'action' => 'auth_fail',
-                            'title' => 'Failed authentication using external key (' . trim($server[$headerNamespace . $header]) . ')',
-                            'change' => null,
+                        'org' => 'SYSTEM',
+                        'model' => 'User',
+                        'model_id' => 0,
+                        'email' => 'SYSTEM',
+                        'action' => 'auth_fail',
+                        'title' => 'Failed authentication using external key (' . trim($server[$headerNamespace . $header]) . ')',
+                        'change' => null,
                     );
                     $this->Log->save($log);
                     if (Configure::read('CustomAuth_required')) {
@@ -1300,7 +1307,8 @@ class AppController extends Controller
         }
     }
 
-    private function _redirectToLogin() {
+    private function _redirectToLogin()
+    {
         $targetRoute = $this->Auth->loginAction;
         $targetRoute['admin'] = false;
         $this->redirect($targetRoute);
@@ -1568,5 +1576,22 @@ class AppController extends Controller
             return true;
         }
         return false;
+    }
+
+
+    /**
+     * Write usage metrics
+     * 
+     * @return void
+     */
+    private function __writeMetrics()
+    {
+        $duration = round(($this->microtimeEnd - $this->microtimeStart) * 1000);
+        $this->Metrics->write(
+            $this->request->params['controller'],
+            $this->action,
+            $this->response->statusCode(),
+            $duration
+        );
     }
 }
