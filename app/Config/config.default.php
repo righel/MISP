@@ -74,11 +74,13 @@ $config = array(
 			'expire' => 300,
 		),
 	'Metrics' => array(
+		  'enabled'=> false,
 		  'InfluxDB' => array(
 			'url' => 'http://localhost:8086',
 			'token' => 'mytoken',
 			'bucket' => 'mybucket',
 			'org' => 'myorg',
+			'timeout' => 10,
 		  )
 		),
 

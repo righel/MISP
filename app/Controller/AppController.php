@@ -788,7 +788,10 @@ class AppController extends Controller
     public function afterFilter()
     {
         $this->microtimeEnd = microtime(true);
-        $this->__writeMetrics();
+
+        if (Configure::read('Metrics.enabled')) {
+            $this->__writeMetrics();
+        }
 
         if ($this->isApiAuthed && $this->_isRest() && !Configure::read('Security.authkey_keep_session')) {
             $this->Session->destroy();
