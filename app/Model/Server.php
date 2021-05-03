@@ -1450,14 +1450,19 @@ class Server extends AppModel
         return $options;
     }
 
-    private function loadLocalOrganisations()
+    private function loadLocalOrganisations($strict = false)
     {
         $localOrgs = $this->Organisation->find('list', array(
             'conditions' => array('local' => 1),
             'recursive' => -1,
             'fields' => array('Organisation.id', 'Organisation.name')
         ));
-        return array_replace(array(0 => __('No organisation selected.')), $localOrgs);
+
+        if(!$strict){
+            return array_replace(array(0 => __('No organisation selected.')), $localOrgs);
+        }
+
+        return $localOrgs;
     }
 
     public function testTagCollections($value)
@@ -1515,6 +1520,15 @@ class Server extends AppModel
     }
 
     public function testLocalOrg($value)
+    {
+        if ($value == 0) {
+            return true; // `No organisation selected` option
+        }
+
+        return $this->testLocalOrgStrict($value);
+    }
+
+    public function testLocalOrgStrict($value)
     {
         $this->Organisation = ClassRegistry::init('Organisation');
         if ($value == 0) {
@@ -3539,19 +3553,13 @@ class Server extends AppModel
     {
         $this->ResqueStatus = new ResqueStatus\ResqueStatus(Resque::redis());
         $workers = $this->ResqueStatus->getWorkers();
-        if (function_exists('posix_getpwuid')) {
-            $currentUser = posix_getpwuid(posix_geteuid());
-            $currentUser = $currentUser['name'];
-        } else {
-            $currentUser = trim(shell_exec('whoami'));
-        }
         $killed = array();
         foreach ($workers as $pid => $worker) {
             if (!is_numeric($pid)) {
                 throw new MethodNotAllowedException('Non numeric PID found!');
             }
-            $pidTest = substr_count(trim(shell_exec('ps -p ' . $pid)), PHP_EOL) > 0 ? true : false;
-            if ($worker['user'] == $currentUser && !$pidTest) {
+            $pidTest = file_exists('/proc/' . addslashes($pid));
+            if (!$pidTest) {
                 $this->ResqueStatus->removeWorker($pid);
                 $this->__logRemoveWorker($user, $pid, $worker['queue'], true);
                 if (empty($killed[$worker['queue']])) {
@@ -4414,6 +4422,80 @@ class Server extends AppModel
         return parent::__get($name);
     }
 
+    public function removeOrphanedCorrelations()
+    {
+        $this->Correlation = ClassRegistry::init('Correlation');
+        $orphansLeft = $this->Correlation->find('all', [
+            'joins' => [
+                [
+                    'table' => 'attributes',
+                    'alias' => 'Attribute',
+                    'type' => 'LEFT',
+                    'conditions' => [
+                        'OR' => [
+                            'Correlation.attribute_id = Attribute.id',
+                        ]
+
+                    ]
+                ]
+            ],
+            'conditions' => [
+                'Attribute.id IS NULL'
+            ],
+        ]);
+        $orphansRight = $this->Correlation->find('all', [
+            'conditions' => [
+                '1_attribute_id' => Hash::extract($orphansLeft, '{n}.Correlation.attribute_id')
+            ]
+        ]);
+        $orphans = array_merge(
+            Hash::extract($orphansLeft, '{n}.Correlation.id'),
+            Hash::extract($orphansRight, '{n}.Correlation.id')
+        );
+        $success = $this->Correlation->deleteAll([
+            'Correlation.id' => $orphans
+        ]);
+        return $success;
+    }
+
+    public function queryAvailableSyncFilteringRules($server)
+    {
+        $HttpSocket = $this->setupHttpSocket($server, null);
+        $uri = $server['Server']['url'] . '/servers/getAvailableSyncFilteringRules';
+        $request = $this->setupSyncRequest($server);
+        $response = $HttpSocket->get($uri, false, $request);
+        if ($response === false) {
+            throw new Exception(__('Connection failed for unknown reason.'));
+        }
+
+        $syncFilteringRules = [];
+        if ($response->isOk()) {
+            $syncFilteringRules = $this->jsonDecode($response->body());
+        } else {
+            throw new Exception(__('Reponse was not OK. (HTTP code: %s)', $response->code));
+        }
+        return $syncFilteringRules;
+    }
+
+    public function getAvailableSyncFilteringRules($user)
+    {
+        $this->Organisation = ClassRegistry::init('Organisation');
+        $this->Tag = ClassRegistry::init('Tag');
+        $organisations = [];
+        if ($user['Role']['perm_sharing_group'] || !Configure::read('Security.hide_organisation_index_from_users')) {
+            $organisations = $this->Organisation->find('list', [
+                'fields' => 'name'
+            ]);
+        }
+        $tags = $this->Tag->find('list', [
+            'fields' => 'name'
+        ]);
+        return [
+            'organisations' => array_values($organisations),
+            'tags' => array_values($tags),
+        ];
+    }
+
     /**
      * Generate just when required
      * @return array[]
@@ -4678,10 +4760,10 @@ class Server extends AppModel
                     'description' => __('The hosting organisation of this instance. If this is not selected then replication instances cannot be added.'),
                     'value' => '0',
                     'errorMessage' => '',
-                    'test' => 'testLocalOrg',
+                    'test' => 'testLocalOrgStrict',
                     'type' => 'numeric',
                     'optionsSource' => function () {
-                        return $this->loadLocalOrganisations();
+                        return $this->loadLocalOrganisations(true);
                     },
                 ),
                 'uuid' => array(
@@ -5232,6 +5314,33 @@ class Server extends AppModel
                     'errorMessage' => '',
                     'test' => 'testForEmpty',
                     'type' => 'string',
+                    'null' => false,
+                ),
+                'event_alert_republish_ban' => array(
+                    'level' => 1,
+                    'description' => __('Enable this setting to start blocking alert e-mails for events that have already been published since a specified amount of time. This threshold is defined by MISP.event_alert_republish_ban_threshold'),
+                    'value' => false,
+                    'errorMessage' => '',
+                    'test' => 'testBool',
+                    'type' => 'boolean',
+                    'null' => false,
+                ),
+                'event_alert_republish_ban_threshold' => array(
+                    'level' => 1,
+                    'description' => __('If the MISP.event_alert_republish_ban setting is set, this setting will control how long no alerting by email will be done. Expected format: integer, in minutes'),
+                    'value' => 5,
+                    'errorMessage' => '',
+                    'test' => 'testForNumeric',
+                    'type' => 'numeric',
+                    'null' => false,
+                ),
+                'event_alert_republish_ban_refresh_on_retry' => array(
+                    'level' => 1,
+                    'description' => __('If the MISP.event_alert_republish_ban setting is set, this setting will control if a ban time should be reset if emails are tried to be sent during the ban.'),
+                    'value' => false,
+                    'errorMessage' => '',
+                    'test' => 'testBool',
+                    'type' => 'boolean',
                     'null' => false,
                 ),
                 'org_alert_threshold' => array(

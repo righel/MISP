@@ -561,8 +561,13 @@ class Event extends AppModel
         return $events;
     }
 
-    // gets the logged in user + an array of events, attaches the correlation count to each
-    public function attachCorrelationCountToEvents($user, $events)
+    /**
+     * Gets the logged in user + an array of events, attaches the correlation count to each
+     * @param array $user
+     * @param array $events
+     * @return array
+     */
+    public function attachCorrelationCountToEvents(array $user, array $events)
     {
         $sgids = $this->SharingGroup->fetchAllAuthorised($user);
         if (!isset($sgids) || empty($sgids)) {
@@ -571,30 +576,28 @@ class Event extends AppModel
         $this->Correlation = ClassRegistry::init('Correlation');
         $eventIds = array_column(array_column($events, 'Event'), 'id');
         $conditionsCorrelation = $this->__buildEventConditionsCorrelation($user, $eventIds, $sgids);
-        $correlations = $this->Correlation->find('all', array(
-            'fields' => array('Correlation.1_event_id', 'count(distinct(Correlation.event_id)) as count'),
+        $this->Correlation->virtualFields['count'] = 'count(distinct(Correlation.event_id))';
+        $correlations = $this->Correlation->find('list', array(
+            'fields' => array('Correlation.1_event_id', 'Correlation.count'),
             'conditions' => $conditionsCorrelation,
-            'recursive' => -1,
             'group' => array('Correlation.1_event_id'),
         ));
-        $correlations = Hash::combine($correlations, '{n}.Correlation.1_event_id', '{n}.0.count');
         foreach ($events as &$event) {
             $event['Event']['correlation_count'] = isset($correlations[$event['Event']['id']]) ? $correlations[$event['Event']['id']] : 0;
         }
         return $events;
     }
 
-    public function attachSightingsCountToEvents($user, $events)
+    public function attachSightingsCountToEvents(array $user, array $events)
     {
         $eventIds = array_column(array_column($events, 'Event'), 'id');
         $this->Sighting = ClassRegistry::init('Sighting');
-        $sightings = $this->Sighting->find('all', array(
-            'fields' => array('Sighting.event_id', 'count(distinct(Sighting.id)) as count'),
+        $this->Sighting->virtualFields['count'] = 'count(Sighting.id)';
+        $sightings = $this->Sighting->find('list', array(
+            'fields' => array('Sighting.event_id', 'Sighting.count'),
             'conditions' => array('event_id' => $eventIds),
-            'recursive' => -1,
             'group' => array('event_id')
         ));
-        $sightings = Hash::combine($sightings, '{n}.Sighting.event_id', '{n}.0.count');
         foreach ($events as $key => $event) {
             $events[$key]['Event']['sightings_count'] = isset($sightings[$event['Event']['id']]) ? $sightings[$event['Event']['id']] : 0;
         }
@@ -1737,31 +1740,24 @@ class Event extends AppModel
         return $this->find('all', $params);
     }
 
-    public function fetchEventIds($user, $from = false, $to = false, $last = false, $list = false, $timestamp = false, $publish_timestamp = false, $eventIdList = false)
+    public function fetchEventIds($user, $options)
     {
         // restricting to non-private or same org if the user is not a site-admin.
         $conditions = $this->createEventConditions($user);
-        $fields = array('Event.id', 'Event.org_id', 'Event.distribution', 'Event.sharing_group_id');
-
-        if ($from) {
-            $conditions['AND'][] = array('Event.date >=' => $from);
+        $paramMapping = [
+            'from' => 'Event.date >=',
+            'to' => 'Event.date <=',
+            'last' => 'Event.publish_timestamp >=',
+            'timestamp' => 'Event.timestamp >=',
+            'publish_timestamp' => 'Event.publish_timestamp >=',
+            'eventIdList' => 'Event.id',
+        ];
+        foreach ($paramMapping as $paramName => $paramLookup) {
+            if (isset($options[$paramName])) {
+                $conditions['AND'][] = [$paramLookup => $options[$paramName]];
+            }
         }
-        if ($to) {
-            $conditions['AND'][] = array('Event.date <=' => $to);
-        }
-        if ($last) {
-            $conditions['AND'][] = array('Event.publish_timestamp >=' => $last);
-        }
-        if ($timestamp) {
-            $conditions['AND'][] = array('Event.timestamp >=' => $timestamp);
-        }
-        if ($publish_timestamp) {
-            $conditions['AND'][] = array('Event.publish_timestamp >=' => $publish_timestamp);
-        }
-        if ($eventIdList) {
-            $conditions['AND'][] = array('Event.id' => $eventIdList);
-        }
-        if ($list) {
+        if (isset($options['list'])) {
             $params = array(
                 'conditions' => $conditions,
                 'fields' => ['Event.id'],
@@ -1771,7 +1767,7 @@ class Event extends AppModel
             $params = array(
                 'conditions' => $conditions,
                 'recursive' => -1,
-                'fields' => $fields,
+                'fields' => ['Event.id', 'Event.org_id', 'Event.distribution', 'Event.sharing_group_id'],
             );
             $results = $this->find('all', $params);
         }
@@ -2738,7 +2734,12 @@ class Event extends AppModel
                     if (!is_numeric($org)) {
                         $existingOrg = $this->Orgc->find('first', array(
                             'recursive' => -1,
-                            'conditions' => array('Orgc.name' => $org),
+                            'conditions' => array(
+                                'OR' => array(
+                                    'Orgc.name' => $org,
+                                    'Orgc.uuid' => $org
+                                )
+                            ),
                             'fields' => array('Orgc.id')
                         ));
                         if (empty($existingOrg)) {
@@ -2755,7 +2756,12 @@ class Event extends AppModel
                     if (!is_numeric($org)) {
                         $existingOrg = $this->Orgc->find('first', array(
                             'recursive' => -1,
-                            'conditions' => array('Orgc.name' => $org),
+                            'conditions' => array(
+                                'OR' => array(
+                                    'Orgc.name' => $org,
+                                    'Orgc.uuid' => $org
+                                )
+                            ),
                             'fields' => array('Orgc.id')
                         ));
                         if (!empty($existingOrg)) {
@@ -3147,6 +3153,21 @@ class Event extends AppModel
                     'change' => null,
             ));
             return true;
+        }
+        $banStatus = $this->getEventRepublishBanStatus($id);
+        if ($banStatus['active']) {
+            $this->Log = ClassRegistry::init('Log');
+            $this->Log->create();
+            $this->Log->save(array(
+                    'org' => 'SYSTEM',
+                    'model' => 'Event',
+                    'model_id' => $id,
+                    'email' => $user['email'],
+                    'action' => 'publish',
+                    'title' => __('E-mail alerts not sent out during publishing'),
+                    'change' => $banStatus['message'],
+            ));
+            return !$banStatus['error'];
         }
         if (Configure::read('MISP.background_jobs')) {
             $job = ClassRegistry::init('Job');
@@ -7297,5 +7318,60 @@ class Event extends AppModel
             return $extendingEventIds;
         }
         return [];
+    }
+
+    public function getEventRepublishBanStatus($eventID)
+    {
+        $banStatus = [
+            'error' => false,
+            'active' => false,
+            'message' => __('Event publish is not banned')
+        ];
+        if (Configure::read('MISP.event_alert_republish_ban')) {
+            $event = $this->find('first', array(
+                    'conditions' => array('Event.id' => $eventID),
+                    'recursive' => -1,
+                    'fields' => array('Event.uuid')
+            ));
+            if (empty($event)) {
+                $banStatus['error'] = true;
+                $banStatus['active'] = true;
+                $banStatus['message'] = __('Event not found');
+                return $banStatus;
+            }
+            $banThresholdMinutes = intval(Configure::read('MISP.event_alert_republish_ban_threshold'));
+            $banThresholdSeconds = 60 * $banThresholdMinutes;
+            $redis = $this->setupRedis();
+            if ($redis === false) {
+                $banStatus['error'] = true;
+                $banStatus['active'] = true;
+                $banStatus['message'] =  __('Reason: Could not reach redis to chech republish emailing ban status.');
+                return $banStatus;
+            }
+            $redisKey = "misp:event_alert_republish_ban:{$event['Event']['uuid']}";
+            $banLiftTimestamp = $redis->get($redisKey);
+            if (!empty($banLiftTimestamp)) {
+                $remainingMinutes = (intval($banLiftTimestamp) - time()) / 60;
+                $banStatus['active'] = true;
+                if (Configure::read('MISP.event_alert_republish_ban_refresh_on_retry')) {
+                    $redis->multi(Redis::PIPELINE)
+                        ->set($redisKey, time() + $banThresholdSeconds)
+                        ->expire($redisKey, $banThresholdSeconds)
+                        ->exec();
+                    $banStatus['message'] = __('Reason: Event is banned from sending out emails. Ban has been refreshed and will be lifted in %smin', $banThresholdMinutes);
+                } else {
+                    $banStatus['message'] = __('Reason: Event is banned from sending out emails. Ban will be lifted in %smin %ssec.', floor($remainingMinutes), $remainingMinutes % 60);
+                }
+                return $banStatus;
+            } else {
+                $redis->multi(Redis::PIPELINE)
+                    ->set($redisKey, time() + $banThresholdSeconds)
+                    ->expire($redisKey, $banThresholdSeconds)
+                    ->exec();
+                return $banStatus;
+            }
+        }
+        $banStatus['message'] = __('Emailing republishing ban setting is not enabled');
+        return $banStatus;
     }
 }
