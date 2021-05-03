@@ -24,6 +24,7 @@ App::uses('Model', 'Model');
 App::uses('LogableBehavior', 'Assets.models/behaviors');
 App::uses('BlowfishPasswordHasher', 'Controller/Component/Auth');
 App::uses('RandomTool', 'Tools');
+App::import('Component', 'MetricsComponent');
 class AppModel extends Model
 {
     public $name;
@@ -57,6 +58,10 @@ class AppModel extends Model
 
         $this->name = get_class($this);
         $this->findMethods['column'] = true;
+
+        if (Configure::read('Metrics.enabled')) {
+            $this->Metrics = new MetricsComponent();
+        }
     }
 
     // deprecated, use $db_changes
@@ -123,6 +128,9 @@ class AppModel extends Model
             'url' => '/servers/releaseUpdateLock/'
         )
     );
+
+    private $microtimeStart;
+    private $microtimeEnd;
 
     public function afterSave($created, $options = array())
     {
@@ -3244,5 +3252,112 @@ class AppModel extends Model
             $this->Log = ClassRegistry::init('Log');
         }
         return $this->Log;
+    }
+
+    public function query($sql)
+    {
+        $response = parent::query($sql);
+        $this->__writeSqlMetrics('query');
+        return $response;
+    }
+
+    public function find($type = 'first', $query = array())
+    {
+        $response =  parent::find($type, $query);
+        $this->__writeSqlMetrics('find');
+        return $response;
+    }
+    
+    public function save($data = null, $validate = true, $fieldList = array())
+    {
+        $response = parent::save($data, $validate, $fieldList);
+        $this->__writeSqlMetrics('save');
+        return $response;
+    }
+
+    public function saveAll($data = array(), $options = array()) 
+    {
+        $response = parent::saveAll($data, $options);
+        $this->__writeSqlMetrics('saveAll');
+        return $response;
+    }
+
+    public function saveMany($data = null, $options = array())
+    {
+        $response = parent::saveMany($data, $options);
+        $this->__writeSqlMetrics('saveMany');
+        return $response;
+    }
+
+    public function saveAssociated($data = null, $options = array()) 
+    {
+        $response = parent::saveAssociated($data, $options);
+        $this->__writeSqlMetrics('saveAssociated');
+        return $response;
+    }
+
+    public function updateAll($fields, $conditions = true)
+    {
+        $response = parent::updateAll($fields, $conditions);
+        $this->__writeSqlMetrics('updateAll');
+        return $response;
+    }
+
+    public function delete($id = null, $cascade = true)
+    {
+        $response = parent::delete($id, $cascade);
+        $this->__writeSqlMetrics('delete');
+        return $response;
+    }
+
+    public function deleteAll($conditions, $cascade = true, $callbacks = false) 
+    {
+        $response = parent::deleteAll($conditions, $cascade, $callbacks);
+        $this->__writeSqlMetrics('deleteAll');
+        return $response;
+    }
+
+    public function exists($id = null) 
+    {
+        $response = parent::exists($id);
+        $this->__writeSqlMetrics('exists');
+        return $response;
+    }
+
+    public function hasAny($conditions = null) 
+    {
+        $response = parent::hasAny($conditions);
+        $this->__writeSqlMetrics('hasAny');
+        return $response;
+    }
+
+    public function isUnique($fields, $or = true) 
+    {
+        $response = parent::isUnique($fields. $or);
+        $this->__writeSqlMetrics('isUnique');
+        return $response;
+    }
+
+    /**
+     * Write DB usage metrics
+     * 
+     * @return void
+     */
+    private function __writeSqlMetrics(string $type) 
+    {
+        $logs = $this->getDataSource()->getLog(false, false);
+        if (!Configure::read('Metrics.enabled') || !$logs['count']) {
+            return;
+        }
+
+        foreach ($logs['log'] as $log){
+            $this->Metrics->writeSql(
+                $type,
+                (string)$log['query'], 
+                (int)$log['affected'],
+                (int)$log['numRows'],
+                (int)$log['took']
+            );
+        }
     }
 }

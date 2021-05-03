@@ -55,7 +55,10 @@ class AppController extends Controller
     /** @var User */
     public $User;
 
+    /** @var float */
     private $microtimeStart;
+
+    /** @var float */
     private $microtimeEnd;
 
     public function __construct($id = false, $table = null, $ds = null)
@@ -790,7 +793,7 @@ class AppController extends Controller
         $this->microtimeEnd = microtime(true);
 
         if (Configure::read('Metrics.enabled')) {
-            $this->__writeMetrics();
+            $this->__writeApiMetrics();
         }
 
         if ($this->isApiAuthed && $this->_isRest() && !Configure::read('Security.authkey_keep_session')) {
@@ -1583,18 +1586,18 @@ class AppController extends Controller
 
 
     /**
-     * Write usage metrics
+     * Write API usage metrics
      * 
      * @return void
      */
-    private function __writeMetrics()
+    private function __writeApiMetrics()
     {
-        $duration = round(($this->microtimeEnd - $this->microtimeStart) * 1000);
-        $this->Metrics->write(
+        $this->Metrics->writeApi(
+            $this->microtimeStart,
+            $this->microtimeEnd,
             $this->request->params['controller'],
             $this->action,
-            $this->response->statusCode(),
-            $duration
+            $this->response->statusCode()
         );
     }
 }
