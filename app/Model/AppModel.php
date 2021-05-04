@@ -3257,84 +3257,84 @@ class AppModel extends Model
     public function query($sql)
     {
         $response = parent::query($sql);
-        $this->__writeSqlMetrics('query');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function find($type = 'first', $query = array())
     {
         $response =  parent::find($type, $query);
-        $this->__writeSqlMetrics('find');
+        $this->__writeSqlMetrics();
         return $response;
     }
     
     public function save($data = null, $validate = true, $fieldList = array())
     {
         $response = parent::save($data, $validate, $fieldList);
-        $this->__writeSqlMetrics('save');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function saveAll($data = array(), $options = array()) 
     {
         $response = parent::saveAll($data, $options);
-        $this->__writeSqlMetrics('saveAll');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function saveMany($data = null, $options = array())
     {
         $response = parent::saveMany($data, $options);
-        $this->__writeSqlMetrics('saveMany');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function saveAssociated($data = null, $options = array()) 
     {
         $response = parent::saveAssociated($data, $options);
-        $this->__writeSqlMetrics('saveAssociated');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function updateAll($fields, $conditions = true)
     {
         $response = parent::updateAll($fields, $conditions);
-        $this->__writeSqlMetrics('updateAll');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function delete($id = null, $cascade = true)
     {
         $response = parent::delete($id, $cascade);
-        $this->__writeSqlMetrics('delete');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function deleteAll($conditions, $cascade = true, $callbacks = false) 
     {
         $response = parent::deleteAll($conditions, $cascade, $callbacks);
-        $this->__writeSqlMetrics('deleteAll');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function exists($id = null) 
     {
         $response = parent::exists($id);
-        $this->__writeSqlMetrics('exists');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function hasAny($conditions = null) 
     {
         $response = parent::hasAny($conditions);
-        $this->__writeSqlMetrics('hasAny');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
     public function isUnique($fields, $or = true) 
     {
         $response = parent::isUnique($fields. $or);
-        $this->__writeSqlMetrics('isUnique');
+        $this->__writeSqlMetrics();
         return $response;
     }
 
@@ -3343,16 +3343,23 @@ class AppModel extends Model
      * 
      * @return void
      */
-    private function __writeSqlMetrics(string $type) 
+    private function __writeSqlMetrics() 
     {
+        if (!Configure::read('Metrics.enabled')) {
+            return;
+        }
+        
         $logs = $this->getDataSource()->getLog(false, false);
-        if (!Configure::read('Metrics.enabled') || !$logs['count']) {
+
+        if(!$logs['count']){
             return;
         }
 
+        $caller = debug_backtrace(DEBUG_BACKTRACE_PROVIDE_OBJECT, 2)[1];
+
         foreach ($logs['log'] as $log){
             $this->Metrics->writeSql(
-                $type,
+                $caller,
                 (string)$log['query'], 
                 (int)$log['affected'],
                 (int)$log['numRows'],

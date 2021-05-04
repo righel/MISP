@@ -56,17 +56,19 @@ class MetricsComponent extends Component
      * @return void
      */
     public function writeSql(
-        string $type,
+        array $caller,
         string $query,
         int $affected,
         int $numRows,
         int $took
     ): void {
 
+        $callerTag = sprintf('%s:%s', get_class($caller['object']), $caller['function']);
+
         $this->writeApi->write(
             sprintf(
-                'sql,type=%s query="%s",affected=%d,numRows=%d,value=%d %s',
-                $type,
+                'sql,caller=%s query="%s",affected=%d,numRows=%d,value=%d %s',
+                $callerTag,
                 str_replace('"', '_', $query),
                 $affected,
                 $numRows,
