@@ -72,7 +72,7 @@ class MetricsComponent extends Component
                 str_replace('"', '_', $query),
                 $affected,
                 $numRows,
-                $took,
+                $took ?? 0, // this relies in debug set to true in the MISP instance
                 round(microtime(true) * 1000)
             )
         );
