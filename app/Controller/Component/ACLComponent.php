@@ -762,7 +762,10 @@ class ACLComponent extends Component
                     'viewPicture' => array('*'),
                     'add' => array('perm_add'),
                     'delete' => array('perm_modify'),
-            )
+            ),
+            'spa' => [
+                'index' => ['*']
+            ]
     );
 
     private $dynamicChecks = [];

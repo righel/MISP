@@ -710,7 +710,7 @@ class AppController extends Controller
             'img-src' => "'self' data:",
             'font-src' => "'self'",
             'form-action' => "'self'",
-            'connect-src' => "'self'",
+            'connect-src' => "'self' https://localhost:8080 wss://localhost:8080",
             'manifest-src' => "'none'",
             'report-uri' => '/servers/cspReport',
         ];

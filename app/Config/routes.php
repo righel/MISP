@@ -27,6 +27,9 @@
  */
 	Router::connect('/', array('controller' => 'events', 'action' => 'index'));
 
+	// SPA
+	Router::connect('/spa/*', array('controller' => 'spa', 'action' => 'index'));
+
 	// admin Paginator
 	Router::connect('/allowedlists/admin_index/*', array('controller' => 'allowedlists', 'action' => 'index', 'admin' => true));
 	Router::connect('/users/admin_index/*', array('controller' => 'users', 'action' => 'index', 'admin' => true));
