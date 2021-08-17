@@ -11,7 +11,15 @@
           placeholder="name@example.com"
           v-model="user.email"
           autocomplete="username"
+          @blur="v$.user.email.$touch"
         />
+        <div
+          class="invalid-feedback d-block"
+          v-for="error of v$.user.email.$errors"
+          :key="error.$uid"
+        >
+          {{ error.$message }}
+        </div>
       </div>
       <div class="mb-3 form-check">
         <label class="form-check-label" for="setPassword">Set password</label>
@@ -139,7 +147,13 @@
       </div>
     </fieldset>
     <div class="mb-3">
-      <button type="submit" class="btn btn-primary">Create user</button>
+      <button
+        :disabled="v$.user.$invalid"
+        type="submit"
+        class="btn btn-primary"
+      >
+        Create user
+      </button>
     </div>
   </form>
 </template>
@@ -147,6 +161,8 @@
 <script>
 import { mapGetters, mapActions } from "vuex";
 import RandomMixin from "../../mixins/random";
+import useVuelidate from "@vuelidate/core";
+import { required, email } from "@vuelidate/validators";
 import Organisations from "../forms/select/Organisations";
 import Roles from "../forms/select/Roles";
 import Servers from "../forms/select/Servers";
@@ -157,6 +173,9 @@ export default {
     Organisations,
     Roles,
     Servers,
+  },
+  setup() {
+    return { v$: useVuelidate() };
   },
   data() {
     return {
@@ -185,11 +204,6 @@ export default {
           console.error(error.response.data);
         }
       );
-      // console.log(this.user);
-      // var response = await this.addUser(this.user);
-      // console.log('add', response);
-      // if (response) {
-      // }
     },
   },
   computed: mapGetters(["organisations", "roles", "servers"]),
@@ -199,6 +213,16 @@ export default {
     this.fetchServers();
   },
   mixins: [RandomMixin],
+  validations() {
+    return {
+      user: {
+        email: {
+          required,
+          email,
+        },
+      },
+    };
+  },
 };
 </script>
 
