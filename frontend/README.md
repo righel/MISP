@@ -2,10 +2,10 @@
 Experiment on using Vue.js 3 Single Page Application (SPA) and Bootstrap 5, in parallel with the existing UI.
 
 PoC pages:
-* http://[YOUR/MISP_HOST]/spa
-* http://[YOUR/MISP_HOST]/spa/users/view/me
-* http://[YOUR/MISP_HOST]/spa/admin/users/index
-* http://[YOUR/MISP_HOST]/spa/admin/users/add
+* http://[YOUR_MISP_HOST]/spa
+* http://[YOUR_MISP_HOST]/spa/users/view/me
+* http://[YOUR_MISP_HOST]/spa/admin/users/index
+* http://[YOUR_MISP_HOST]/spa/admin/users/add
 
 ## Why
 Putting aside the hype driven development of javascript frameworks, some projects have real tangible benefits that make the effort of migrating legacy applications worthwhile.
@@ -76,7 +76,7 @@ Each resource API methods are defined in separate files under the `frontend/src/
 ### Directory structure
 * `frontend/src/components`: reusable UI components.
 * `frontend/src/views`: user browsable UI's.
-* `frontend/src/assets`: static files suchas as images.
+* `frontend/src/assets`: static files such as images.
 * `frontend/src/mixins`: general helpers.
 * `frontend/src/store`: API resources.
 * `frontend/src/router`: Routes and their linked views.
