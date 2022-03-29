@@ -100,7 +100,7 @@ class AppController extends Controller
         'IndexFilter',
         'Deprecation',
         'RestSearch',
-        'CRUD',
+        'CRUD'
         //,'DebugKit.Toolbar'
     );
 
