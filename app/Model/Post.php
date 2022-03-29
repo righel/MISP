@@ -8,6 +8,7 @@ App::uses('AppModel', 'Model');
 class Post extends AppModel
 {
     public $actsAs = array(
+        'AuditLog',
             'Containable',
             'SysLogLogable.SysLogLogable' => array( // TODO Audit, logable
                     'roleModel' => 'Post',
@@ -31,26 +32,33 @@ class Post extends AppModel
     {
         if (Configure::read('MISP.background_jobs')) {
             $user = $this->User->findById($user_id);
+
+            /** @var Job $job */
             $job = ClassRegistry::init('Job');
-            $job->create();
-            $data = array(
-                    'worker' => 'email',
-                    'job_type' => 'posts_alert',
-                    'job_input' => 'Post: ' . $post_id,
-                    'status' => 0,
-                    'retries' => 0,
-                    'org_id' => $user['User']['org_id'],
-                    'message' => 'Sending...',
+            $jobId = $job->createJob(
+                $user['User'],
+                Job::WORKER_EMAIL,
+                'posts_alert',
+                'Post: ' . $post_id,
+                'Sending...'
             );
-            $job->save($data);
-            $jobId = $job->id;
-            $process_id = CakeResque::enqueue(
-                    'email',
-                    'EventShell',
-                    array('postsemail', $user_id, $post_id, $event_id, $title, $message, $jobId),
-                    true
+
+            $this->getBackgroundJobsTool()->enqueue(
+                BackgroundJobsTool::EMAIL_QUEUE,
+                BackgroundJobsTool::CMD_EVENT,
+                [
+                    'postsemail',
+                    $user_id,
+                    $post_id,
+                    $event_id,
+                    $title,
+                    $message,
+                    $jobId
+                ],
+                true,
+                $jobId
             );
-            $job->saveField('process_id', $process_id);
+
             return true;
         } else {
             return $this->sendPostsEmail($user_id, $post_id, $event_id, $title, $message);
@@ -134,7 +142,7 @@ class Post extends AppModel
                 'NOT' => ['User.id' => $excludeUsers]
             ],
             'contain' => ['User' => ['fields' => $userFields]],
-            'group' => ['User.id'], // remove duplicates
+            'group' => ['User.id', 'Post.id', 'User.email', 'User.gpgkey', 'User.certif_public', 'User.disabled'], // remove duplicates
         ]);
         $orgMembers = array_merge($orgMembers, $temp);
 

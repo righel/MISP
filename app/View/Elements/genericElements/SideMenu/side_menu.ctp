@@ -27,26 +27,20 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'element_id' => 'dashboardImport',
                         'text' => __('Import Config JSON'),
-                        'onClick' => array(
-                            'function' => 'openGenericModal',
-                            'params' => array($baseurl . '/dashboards/import')
-                        ),
+                        'url' => $baseurl . '/dashboards/import',
+                        'link_class' => 'modal-open',
                     ));
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'element_id' => 'dashboardExport',
                         'text' => __('Export Config JSON'),
-                        'onClick' => array(
-                            'function' => 'openGenericModal',
-                            'params' => array($baseurl . '/dashboards/export')
-                        ),
+                        'url' => $baseurl . '/dashboards/export',
+                        'link_class' => 'modal-open',
                     ));
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'element_id' => 'dashboardSave',
                         'text' => __('Save Dashboard Config'),
-                        'onClick' => array(
-                            'function' => 'openGenericModal',
-                            'params' => array($baseurl . '/dashboards/saveTemplate')
-                        ),
+                        'url' => $baseurl . '/dashboards/saveTemplate',
+                        'link_class' => 'modal-open',
                     ));
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'element_id' => 'dashboardTemplateIndex',
@@ -55,7 +49,7 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                     ));
                     break;
                 case 'event':
-                    $eventId = intval($event['Event']['id']);
+                    $eventId = (int)$event['Event']['id'];
                     echo '<div id="hiddenSideMenuData" class="hidden" data-event-id="' . $eventId . '"></div>';
                     if (in_array($menuItem, array('editEvent', 'addAttribute', 'addObject', 'addAttachment', 'addIOC', 'addThreatConnect', 'populateFromTemplate', 'merge'))) {
                         // we can safely assume that mayModify is true if coming from these actions, as they require it in the controller and the user has already passed that check
@@ -94,7 +88,7 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                     ));
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'element_id' => 'eventLog',
-                        'url' => $baseurl . '/logs/event_index/' . $eventId,
+                        'url' => $baseurl . (Configure::read('MISP.log_new_audit') ? '/audit_logs/eventIndex/' : '/logs/event_index/') . $eventId,
                         'text' => __('View Event History')
                     ));
                     echo $divider;
@@ -285,6 +279,13 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                     }
                 break;
 
+                case 'event_restsearch_export':
+                    echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                        'url' => $baseurl . '/events/index',
+                        'text' => __('List Events')
+                    ));
+                    break;
+
                 case 'tag-collections':
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'url' => $baseurl . '/tag_collections/index',
@@ -440,6 +441,11 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                             'url' => '/eventReports/edit/' . h($id),
                             'text' => __('Edit Event Report')
                         ));
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'url' => '/admin/audit_logs/index/model:EventReport/model_id:' .  h($id),
+                            'text' => __('View report history'),
+                            'requirement' => Configure::read('MISP.log_new_audit') && $canAccess('auditLogs', 'admin_index'),
+                        ));
                     }
                     break;
 
@@ -501,11 +507,26 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                     ));
                     break;
                 case 'warninglist':
-                    if ($menuItem === 'view') {
+                    if ($menuItem === 'view' || $menuItem === 'edit') {
                         echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                             'element_id' => 'view',
+                            'url' => $baseurl . '/warninglists/view/' . h($id),
                             'text' => __('View Warninglist')
                         ));
+                        if (!$isDefault && $canAccess('warninglists', 'edit')) {
+                            echo $this->element('/genericElements/SideMenu/side_menu_link', [
+                                'element_id' => 'edit',
+                                'url' => $baseurl . '/warninglists/edit/' . h($id),
+                                'text' => __('Edit Warninglist'),
+                            ]);
+                        }
+                    }
+                    if ($canAccess('warninglists', 'add')) {
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', [
+                            'element_id' => 'add',
+                            'url' => $baseurl . '/warninglists/add',
+                            'text' => __('Add Warninglist'),
+                        ]);
                     }
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'url' => $baseurl . '/warninglists/index',
@@ -519,22 +540,29 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                             'message' => __('Are you sure you want to update all warninglists?')
                         ));
                     }
+
+                    echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                        'element_id' => 'check_value',
+                        'url' => $baseurl . '/warninglists/checkValue',
+                        'text' => __('Search in Warninglists')
+                    ));
                     break;
 
                 case 'noticelist':
-                    if ($menuItem === 'view') {
+                    if ($menuItem === 'view_noticelist') {
                         echo $this->element('/genericElements/SideMenu/side_menu_link', array(
-                            'element_id' => 'view',
+                            'element_id' => 'view_noticelist',
                             'text' => __('View Noticelist')
                         ));
                     }
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
-                        'element_id' => 'index',
+                        'element_id' => 'list_noticelists',
                         'url' => $baseurl . '/noticelists/index',
                         'text' => __('List Noticelist')
                     ));
                     if ($canAccess('noticelists', 'update')) {
                         echo $this->element('/genericElements/SideMenu/side_menu_post_link', array(
+                            'element_id' => 'update_noticelists',
                             'url' => $baseurl . '/noticelists/update',
                             'text' => __('Update Noticelists'),
                             'message' => __('Do you wish to continue and update all noticelists?')
@@ -560,7 +588,8 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                     if ($menuItem == 'edit') {
                         echo $divider;
                         echo $this->element('/genericElements/SideMenu/side_menu_link', array(
-                            'url' => $baseurl . '/admin/allowedlists/edit' . h($id),
+                            'url' => $baseurl . '/admin/allowedlists/edit/' . h($id),
+                            'element_id' => 'edit',
                             'text' => __('Edit Allowedlist')
                         ));
                         echo $this->element('/genericElements/SideMenu/side_menu_post_link', array(
@@ -644,6 +673,25 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                             'text' => __('View Sharing Group')
                         ));
                     }
+                    if ($menuItem === 'editMG' || ($menuItem == 'viewMG' && $isAclSharingGroup)) {
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'element_id' => 'editMG',
+                            'url' => $baseurl . '/sharing_group_blueprints/edit/' . h($id),
+                            'text' => __('Edit Sharing Group Blueprint')
+                        ));
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'element_id' => 'viewMG',
+                            'url' => $baseurl . '/sharing_group_blueprints/view/' . h($id),
+                            'text' => __('View Sharing Group Blueprint')
+                        ));
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'text' => __('Execute Sharing Group Blueprint'),
+                            'onClick' => array(
+                                'function' => 'openGenericModal',
+                                'params' => array($baseurl . '/sharing_group_blueprints/execute/' . h($id))
+                            ),
+                        ));
+                    }
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'element_id' => 'indexSG',
                         'url' => $baseurl . '/sharing_groups/index',
@@ -654,6 +702,16 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                             'element_id' => 'addSG',
                             'url' => $baseurl . '/sharing_groups/add',
                             'text' => __('Add Sharing Group')
+                        ));
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'element_id' => 'indexMG',
+                            'url' => $baseurl . '/sharing_group_blueprints/index',
+                            'text' => __('List Sharing Group Blueprints')
+                        ));
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'element_id' => 'addMG',
+                            'url' => $baseurl . '/sharing_group_blueprints/add',
+                            'text' => __('Add Sharing Group Blueprint')
                         ));
                     }
                     echo $divider;
@@ -1025,6 +1083,12 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                         'text' => __('List Logs')
                     ));
                     echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                        'element_id' => 'listAuditLogs',
+                        'url' => $baseurl . '/admin/audit_logs/index',
+                        'text' => __('List Audit Logs'),
+                        'requirement' => Configure::read('MISP.log_new_audit'),
+                    ));
+                    echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                         'url' => $baseurl . '/admin/logs/search',
                         'text' => __('Search Logs')
                     ));
@@ -1246,12 +1310,12 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                         if ($menuItem === 'edit' || $menuItem === 'view') {
                             echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                                 'element_id' => 'edit',
-                                'url' => $baseurl . '/feeds/edit/' . h($feed['Feed']['id']),
+                                'url' => $baseurl . '/feeds/edit/' . h($feedId),
                                 'text' => __('Edit Feed')
                             ));
                             echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                                 'element_id' => 'view',
-                                'url' => $baseurl . '/feeds/view/' . h($feed['Feed']['id']),
+                                'url' => $baseurl . '/feeds/view/' . h($feedId),
                                 'text' => __('View Feed')
                             ));
                         } else if ($menuItem === 'previewIndex') {
@@ -1345,7 +1409,7 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                             'text' => __('Import Galaxy Clusters')
                         ));
                     }
-                    if ($menuItem === 'view' || $menuItem === 'export' || $menuItem === 'view_cluster') {
+                    if ($menuItem === 'view' || $menuItem === 'export' || $menuItem === 'view_cluster' || $menuItem === 'add_cluster') {
                         echo $this->element('/genericElements/SideMenu/side_menu_link', array(
                             'element_id' => 'export',
                             'url' => $baseurl . '/galaxies/export/' . h($galaxy['Galaxy']['id']),
@@ -1537,6 +1601,23 @@ $divider = $this->element('/genericElements/SideMenu/side_menu_divider');
                             'text' => __('List SightingDB connections')
                         ));
                     }
+                    break;
+
+                    case 'api':
+                        echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                            'element_id' => 'openapi',
+                            'url' => $baseurl . '/servers/openapi',
+                            'text' => __('OpenAPI')
+                        ));
+                        if ($isAclAdd) {
+                            if ($canAccess('servers', 'rest')) {
+                                echo $this->element('/genericElements/SideMenu/side_menu_link', array(
+                                    'element_id' => 'rest',
+                                    'url' => $baseurl . '/servers/rest',
+                                    'text' => __('REST client')
+                                ));
+                            }
+                        }
                     break;
             }
         ?>

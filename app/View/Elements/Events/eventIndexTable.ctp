@@ -13,29 +13,32 @@
         <?php
             if (Configure::read('MISP.showorgalternate') && Configure::read('MISP.showorg')):
         ?>
-            <th class="filter"><?php echo $this->Paginator->sort('Org', 'Source org'); ?></th>
-            <th class="filter"><?php echo $this->Paginator->sort('Org', 'Member org'); ?></th>
+            <th class="filter"><?php echo $this->Paginator->sort('Orgc.name', __('Source org')); ?></th>
+            <th class="filter"><?php echo $this->Paginator->sort('Orgc.name', __('Member org')); ?></th>
         <?php
             elseif (Configure::read('MISP.showorg') || $isAdmin):
         ?>
-            <th class="filter"><?php echo $this->Paginator->sort('Org', __('Creator org')); ?></th>
+            <th class="filter"><?php echo $this->Paginator->sort('Orgc.name', __('Creator org')); ?></th>
         <?php
                 endif;
             $date = time();
             $day = 86400;
         ?>
 
-        <?php if (in_array('owner_org', $columns, true)): ?><th class="filter"><?= $this->Paginator->sort('owner org', __('Owner org')) ?></th><?php endif; ?>
+        <?php if (in_array('owner_org', $columns, true)): ?><th class="filter"><?= $this->Paginator->sort('Org.name', __('Owner org')) ?></th><?php endif; ?>
         <th><?= $this->Paginator->sort('id', __('ID'), ['direction' => 'desc']) ?></th>
         <?php if (in_array('clusters', $columns, true)): ?><th><?= __('Clusters') ?></th><?php endif; ?>
         <?php if (in_array('tags', $columns, true)): ?><th><?= __('Tags') ?></th><?php endif; ?>
         <?php if (in_array('attribute_count', $columns, true)): ?><th title="<?= __('Attribute Count') ?>"><?= $this->Paginator->sort('attribute_count', __('#Attr.')) ?></th><?php endif; ?>
         <?php if (in_array('correlations', $columns, true)): ?><th title="<?= __('Correlation Count')  ?>"><?= __('#Corr.') ?></th><?php endif; ?>
+        <?php if (in_array('report_count', $columns, true)): ?><th title="<?= __('Report Count') ?>"><?= $this->Paginator->sort('report_count', __('#Reports')) ?></th><?php endif; ?>
         <?php if (in_array('sightings', $columns, true)): ?><th title="<?= __('Sighting Count')?>"><?= __('#Sightings') ?></th><?php endif; ?>
         <?php if (in_array('proposals', $columns, true)): ?><th title="<?= __('Proposal Count') ?>"><?= __('#Prop') ?></th><?php endif; ?>
         <?php if (in_array('discussion', $columns, true)): ?><th title="<?= __('Post Count') ?>"><?= __('#Posts') ?></th><?php endif; ?>
         <?php if (in_array('creator_user', $columns, true)): ?><th><?= $this->Paginator->sort('user_id', __('Creator user')) ?></th><?php endif; ?>
         <th class="filter"><?= $this->Paginator->sort('date', null, array('direction' => 'desc'));?></th>
+        <?php if (in_array('timestamp', $columns, true)): ?><th title="<?= __('Last modified at') ?>"><?= $this->Paginator->sort('timestamp', __('Last modified at')) ?></th><?php endif; ?>
+        <?php if (in_array('publish_timestamp', $columns, true)): ?><th title="<?= __('Last modified at') ?>"><?= $this->Paginator->sort('publish_timestamp', __('Published at')) ?></th><?php endif; ?>
         <th class="filter"><?= $this->Paginator->sort('info');?></th>
         <th title="<?= $eventDescriptions['distribution']['desc'];?>">
             <?= $this->Paginator->sort('distribution');?>
@@ -66,8 +69,8 @@
             <?= $this->OrgImg->getOrgLogo($event['Org'], 24) ?>
         </td>
         <?php endif; ?>
-        <td style="width:30px;">
-            <a href="<?= $baseurl."/events/view/".$eventId ?>" class="dblclickActionElement threat-level-<?= strtolower(h($event['ThreatLevel']['name'])) ?>" title="<?= __('Threat level: %s', h($event['ThreatLevel']['name'])) ?>"><?= $eventId ?></a>
+        <td class="short">
+            <span><a href="<?= $baseurl."/events/view/".$eventId ?>" class="dblclickActionElement threat-level-<?= strtolower(h($event['ThreatLevel']['name'])) ?>" title="<?= __('Threat level: %s', h($event['ThreatLevel']['name'])) ?>"><?= $eventId ?></a> <?= !empty($event['Event']['protected']) ? sprintf('<i class="fas fa-lock" title="%s"></i>', __('Protected event')) : ''?></span>
         </td>
         <?php if (in_array('clusters', $columns, true)): ?>
         <td class="short">
@@ -124,6 +127,11 @@
             <?php endif; ?>
         </td>
         <?php endif; ?>
+        <?php if (in_array('report_count', $columns, true)): ?>
+        <td class="bold" style="width:30px;">
+            <?= $event['Event']['report_count']; ?>
+        </td>
+        <?php endif; ?>
         <?php if (in_array('sightings', $columns, true)): ?>
         <td class="bold" style="width:30px;">
             <?php if (!empty($event['Event']['sightings_count'])): ?>
@@ -161,6 +169,16 @@
         <td class="short dblclickElement">
             <?= $event['Event']['date'] ?>
         </td>
+        <?php if (in_array('timestamp', $columns, true)): ?>
+        <td class="short dblclickElement">
+            <?=  $this->Time->time($event['Event']['timestamp']) ?>
+        </td>
+        <?php endif; ?>
+        <?php if (in_array('publish_timestamp', $columns, true)): ?>
+        <td class="short dblclickElement">
+            <?=  $this->Time->time($event['Event']['publish_timestamp']) ?>
+        </td>
+        <?php endif; ?>
         <td class="dblclickElement">
             <?= nl2br(h($event['Event']['info']), false) ?>
         </td>

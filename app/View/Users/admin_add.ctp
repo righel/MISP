@@ -8,26 +8,27 @@
         <div class="clear"></div>
     <?php
         $password = true;
-        if (Configure::read('Plugin.CustomAuth_enable')):
-            if (Configure::read('Plugin.CustomAuth_required')):
+        if (Configure::read('Plugin.CustomAuth_enable')) {
+            if (Configure::read('Plugin.CustomAuth_required')) {
                 $password = false;
-            else:
+            } else {
                 $userType = Configure::read('Plugin.CustomAuth_name') ? Configure::read('Plugin.CustomAuth_name') : 'External authentication';
-                echo $this->Form->input('external_auth_required', array('type' => 'checkbox', 'label' => $userType . ' user'));
-            endif;
-
-    ?>
-        <div class="clear"></div>
-        <div id="externalAuthDiv">
-        <?php
-            echo $this->Form->input('external_auth_key', array('type' => 'text'));
-        ?>
-        </div>
-    <?php
-        endif;
+                echo $this->Form->input('external_auth_required', array('type' => 'checkbox', 'label' => h($userType) . ' user'));
+            }
+            echo sprintf(
+                '<div class="clear"></div><div %s>%s</div>',
+                (
+                    (
+                        !empty(Configure::read('Plugin.CustomAuth_required')) &&
+                        !empty(Configure::read('Plugin.CustomAuth_enable'))
+                    ) ? '' : sprintf('id="externalAuthDiv"')
+                ),
+                $this->Form->input('external_auth_key', array('type' => 'text'))
+            );
+        }
     ?>
     <div class="clear"></div>
-    <div id="passwordDivDiv">
+    <div id="passwordDivDiv" style="<?= (!empty(Configure::read('Plugin.CustomAuth_required')) && !empty(Configure::read('Plugin.CustomAuth_enable'))) ? 'display:none;' : ''?>">
         <?php
             echo $this->Form->input('enable_password', array('type' => 'checkbox', 'label' => __('Set password')));
         ?>
@@ -52,13 +53,18 @@
                     'empty' => __('Choose organisation'),
             ));
         }
-        $roleOptions = array('label' => __('Role'));
+        $roleOptions = array(
+            'label' => __('Role'),
+            'div' => empty(Configure::read('Security.advanced_authkeys')) ? null : 'input clear'
+        );
         // We need to make sure that the default role is actually available to the admin (for an org admin it might not be)
         if (!empty($default_role_id) && isset($roles[intval($default_role_id)])) {
             $roleOptions['default'] = $default_role_id;
         }
         echo $this->Form->input('role_id', $roleOptions);
-        echo $this->Form->input('authkey', array('value' => $authkey, 'readonly' => 'readonly', 'div' => 'input clear'));
+        if (empty(Configure::read('Security.advanced_authkeys'))) {
+            echo $this->Form->input('authkey', array('value' => $authkey, 'readonly' => 'readonly', 'div' => 'input clear'));
+        }
         echo $this->Form->input('nids_sid', ['label' => __('NIDS SID')]);
     ?>
         <div id="syncServers" class="hidden">

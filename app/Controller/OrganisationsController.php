@@ -45,6 +45,8 @@ class OrganisationsController extends AppController
             $searchall = $this->passedArgs['all'];
         } elseif (isset($this->passedArgs['searchall'])) {
             $searchall = $this->passedArgs['searchall'];
+        } elseif (isset($this->passedArgs['quickFilter'])) {
+            $searchall = $this->passedArgs['quickFilter'];
         }
 
         if (isset($searchall) && !empty($searchall)) {
@@ -130,13 +132,13 @@ class OrganisationsController extends AppController
                 $this->__uploadLogo($this->Organisation->id);
                 if ($this->_isRest()) {
                     $org = $this->Organisation->find('first', array(
-                            'conditions' => array('Organisation.id' => $this->Organisation->id),
-                            'recursive' => -1
+                        'conditions' => array('Organisation.id' => $this->Organisation->id),
+                        'recursive' => -1
                     ));
                     return $this->RestResponse->viewData($org, $this->response->type());
                 } else {
                     $this->Flash->success(__('The organisation has been successfully added.'));
-                    $this->redirect(array('admin' => false, 'action' => 'index'));
+                    $this->redirect(array('admin' => false, 'action' => 'view', $this->Organisation->id));
                 }
             } else {
                 if ($this->_isRest()) {
@@ -159,6 +161,7 @@ class OrganisationsController extends AppController
         }
         $countries = array_merge(['' => __('Not specified')], $this->_arrayToValuesIndexArray($this->Organisation->getCountries()));
         $this->set('countries', $countries);
+        $this->set('action', 'add');
     }
 
     public function admin_edit($id)
@@ -183,7 +186,7 @@ class OrganisationsController extends AppController
                     $this->request->data['Organisation'] = $this->request->data;
                 }
                 $existingOrg = $this->Organisation->find('first', array('conditions' => array('Organisation.id' => $id)));
-                $changeFields = array('name', 'type', 'nationality', 'sector', 'contacts', 'description', 'local', 'uuid');
+                $changeFields = array('name', 'type', 'nationality', 'sector', 'contacts', 'description', 'local', 'uuid', 'restricted_to_domain');
                 $temp = array('Organisation' => array());
                 foreach ($changeFields as $field) {
                     if (isset($this->request->data['Organisation'][$field])) {
@@ -245,6 +248,8 @@ class OrganisationsController extends AppController
             $this->request->data['Organisation']['restricted_to_domain'] = implode("\n", $this->request->data['Organisation']['restricted_to_domain']);
         }
         $this->set('id', $id);
+        $this->set('action', 'edit');
+        $this->render('admin_add');
     }
 
     public function admin_delete($id)
@@ -367,19 +372,15 @@ class OrganisationsController extends AppController
         }
         $idList = json_decode($idList, true);
         $id_exclusion_list = array_merge($idList, array($this->Auth->user('Organisation')['id']));
-        $temp = $this->Organisation->find('all', array(
-                'conditions' => array(
-                        'local' => $local,
-                        'id !=' => $id_exclusion_list,
-                ),
-                'recursive' => -1,
-                'fields' => array('id', 'name'),
-                'order' => array('lower(name) ASC')
+        $orgs = $this->Organisation->find('list', array(
+            'conditions' => array(
+                'local' => $local,
+                'id !=' => $id_exclusion_list,
+            ),
+            'recursive' => -1,
+            'fields' => array('id', 'name'),
+            'order' => array('lower(name) ASC')
         ));
-        $orgs = array();
-        foreach ($temp as $org) {
-            $orgs[] = array('id' => $org['Organisation']['id'], 'name' => $org['Organisation']['name']);
-        }
         $this->set('local', $local);
         $this->layout = false;
         $this->autoRender = false;
@@ -397,10 +398,13 @@ class OrganisationsController extends AppController
         $this->render('ajax/sg_org_row_empty');
     }
 
+    /**
+     * @deprecated Probably not used anywhere.
+     */
     public function getUUIDs()
     {
-        if (!$this->Auth->user('Role')['perm_sync']) {
-            throw new MethodNotAllowedException(__('This action is restricted to sync users'));
+        if (Configure::read('Security.hide_organisation_index_from_users')) {
+            throw new MethodNotAllowedException(__('This action is not enabled on this instance.'));
         }
         $temp = $this->Organisation->find('all', array(
                 'recursive' => -1,
@@ -479,6 +483,12 @@ class OrganisationsController extends AppController
         if ($logo['size'] > 0 && $logo['error'] == 0) {
             $extension = pathinfo($logo['name'], PATHINFO_EXTENSION);
             $filename = $orgId . '.' . ($extension === 'svg' ? 'svg' : 'png');
+
+            if ($extension === 'svg' && !Configure::read('Security.enable_svg_logos')) {
+                $this->Flash->error(__('Invalid file extension, SVG images are not allowed.'));
+                return false;
+            }
+
             if (!empty($logo['tmp_name']) && is_uploaded_file($logo['tmp_name'])) {
                 return move_uploaded_file($logo['tmp_name'], APP . 'webroot/img/orgs/' . $filename);
             }

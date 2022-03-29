@@ -1,3 +1,5 @@
+-- db_version of this file: 61
+
 -- --------------------------------------------------------
 
 --
@@ -9,7 +11,7 @@ CREATE TABLE IF NOT EXISTS `admin_settings` (
   `setting` varchar(255) COLLATE utf8_bin NOT NULL,
   `value` text COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`),
-  INDEX `setting` (`setting`)
+  UNIQUE INDEX `setting` (`setting`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 CREATE TABLE IF NOT EXISTS `allowedlist` (
@@ -148,8 +150,6 @@ CREATE TABLE IF NOT EXISTS `correlations` (
   `a_distribution` tinyint(4) NOT NULL,
   `sharing_group_id` int(11) NOT NULL,
   `a_sharing_group_id` int(11) NOT NULL,
-  `date` date NOT NULL,
-  `info` text COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`),
   INDEX `event_id` (`event_id`),
   INDEX `1_event_id` (`1_event_id`),
@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS `event_blocklists` (
   `comment` TEXT CHARACTER SET utf8 COLLATE utf8_unicode_ci,
   `event_orgc` VARCHAR( 255 ) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL,
   PRIMARY KEY (`id`),
-  INDEX `event_uuid` (`event_uuid`),
+  UNIQUE INDEX `event_uuid` (`event_uuid`),
   INDEX `event_orgc` (`event_orgc`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
@@ -438,7 +438,7 @@ CREATE TABLE IF NOT EXISTS `galaxies` (
   `kill_chain_order` text,
   PRIMARY KEY (id),
   INDEX `name` (`name`),
-  INDEX `uuid` (`uuid`),
+  UNIQUE INDEX `uuid` (`uuid`),
   INDEX `type` (`type`),
   INDEX `namespace` (`namespace`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
@@ -548,7 +548,7 @@ CREATE TABLE IF NOT EXISTS `jobs` (
   `message` text CHARACTER SET utf8 COLLATE utf8_bin NOT NULL,
   `progress` int(11) NOT NULL DEFAULT 0,
   `org_id` int(11) NOT NULL DEFAULT 0,
-  `process_id` varchar(32) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
+  `process_id` varchar(36) CHARACTER SET utf8 COLLATE utf8_bin DEFAULT NULL,
   `date_created` datetime NOT NULL,
   `date_modified` datetime NOT NULL,
   PRIMARY KEY (`id`)
@@ -634,21 +634,6 @@ KEY `org_id` (`org_id`),
 KEY `type` (`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
--- -------------------------------------------------------
-
---
--- Table structure for `org_blacklists`
---
-
-CREATE TABLE IF NOT EXISTS `org_blocklists` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `org_uuid` varchar(40) COLLATE utf8_bin NOT NULL,
-  `created` datetime NOT NULL,
-  PRIMARY KEY (`id`),
-  `org_name` varchar(255) COLLATE utf8_bin NOT NULL,
-  `comment` TEXT CHARACTER SET utf8 COLLATE utf8_unicode_ci NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
-
 -- --------------------------------------------------------
 
 --
@@ -677,7 +662,7 @@ CREATE TABLE IF NOT EXISTS `objects` (
   INDEX `template_version` (`template_version`),
   INDEX `meta-category` (`meta-category`),
   INDEX `event_id` (`event_id`),
-  INDEX `uuid` (`uuid`),
+  UNIQUE INDEX `uuid` (`uuid`),
   INDEX `timestamp` (`timestamp`),
   INDEX `distribution` (`distribution`),
   INDEX `sharing_group_id` (`sharing_group_id`),
@@ -705,6 +690,7 @@ CREATE TABLE IF NOT EXISTS `object_references` (
   `comment` text COLLATE utf8_bin NOT NULL,
   `deleted` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
+  UNIQUE INDEX `uuid` (`uuid`),
   INDEX `source_uuid` (`source_uuid`),
   INDEX `referenced_uuid` (`referenced_uuid`),
   INDEX `timestamp` (`timestamp`),
@@ -800,18 +786,18 @@ CREATE TABLE IF NOT EXISTS `organisations` (
   `restricted_to_domain` text COLLATE utf8_bin,
   `landingpage` text CHARACTER SET utf8 COLLATE utf8_unicode_ci,
   PRIMARY KEY (`id`),
-  INDEX `uuid` (`uuid`),
-  INDEX `name` (`name`(255))
+  UNIQUE INDEX `uuid` (`uuid`),
+  UNIQUE INDEX `name` (`name`(255))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
-CREATE TABLE IF NOT EXISTS `org_blacklists` (
+CREATE TABLE IF NOT EXISTS `org_blocklists` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `org_uuid` varchar(40) COLLATE utf8_bin NOT NULL,
   `created` datetime NOT NULL,
   `org_name` varchar(255) COLLATE utf8_bin NOT NULL,
   `comment` TEXT CHARACTER SET utf8 COLLATE utf8_unicode_ci,
   PRIMARY KEY (`id`),
-  INDEX `org_uuid` (`org_uuid`),
+  UNIQUE INDEX `org_uuid` (`org_uuid`),
   INDEX `org_name` (`org_name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 -- --------------------------------------------------------
@@ -1071,6 +1057,7 @@ CREATE TABLE IF NOT EXISTS `sharing_groups` (
   INDEX `org_id` (`org_id`),
   INDEX `sync_user_id` (`sync_user_id`),
   UNIQUE INDEX `uuid` (`uuid`),
+  UNIQUE INDEX `name` (`name`),
   INDEX `organisation_uuid` (`organisation_uuid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
 
@@ -1122,7 +1109,7 @@ CREATE TABLE IF NOT EXISTS `sightings` (
   INDEX `attribute_id` (`attribute_id`),
   INDEX `event_id` (`event_id`),
   INDEX `org_id` (`org_id`),
-  INDEX `uuid` (`uuid`),
+  UNIQUE INDEX `uuid` (`uuid`),
   INDEX `source` (`source`),
   INDEX `type` (`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
@@ -1166,7 +1153,7 @@ CREATE TABLE IF NOT EXISTS `tags` (
   `hide_tag` tinyint(1) NOT NULL DEFAULT 0,
   `numerical_value` int(11) NULL,
   PRIMARY KEY (`id`),
-  INDEX `name` (`name`(255)),
+  UNIQUE INDEX `name` (`name`(255)),
   INDEX `org_id` (`org_id`),
   INDEX `user_id` (`user_id`),
   INDEX `numerical_value` (`numerical_value`)
@@ -1422,7 +1409,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `date_created` bigint(20),
   `date_modified` bigint(20),
   PRIMARY KEY (`id`),
-  INDEX `email` (`email`),
+  UNIQUE INDEX `email` (`email`),
   INDEX `org_id` (`org_id`),
   INDEX `server_id` (`server_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
@@ -1670,7 +1657,7 @@ INSERT IGNORE INTO `template_element_texts` (`id`, `name`, `template_element_id`
 (11, 'Persistence mechanism', 41, 'The following fields allow you to describe the persistence mechanism used by the malware'),
 (12, 'Indicators', 45, 'Just paste your list of indicators based on type into the appropriate field. All of the fields are optional, so inputting a list of IP addresses into the Network indicator field for example is sufficient to complete this template.');
 
-INSERT IGNORE INTO `org_blacklists` (`org_uuid`, `created`, `org_name`, `comment`) VALUES
+INSERT IGNORE INTO `org_blocklists` (`org_uuid`, `created`, `org_name`, `comment`) VALUES
 ('58d38339-7b24-4386-b4b4-4c0f950d210f', NOW(), 'Setec Astrononomy', 'default example'),
 ('58d38326-eda8-443a-9fa8-4e12950d210f', NOW(), 'Acme Finance', 'default example');
 

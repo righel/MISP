@@ -9,15 +9,10 @@ class SightingsController extends AppController
 {
     public $components = array('Session', 'RequestHandler');
 
-    public function beforeFilter()
-    {
-        parent::beforeFilter();
-    }
-
     public $paginate = array(
-            'limit' => 60,
-            'maxLimit' => 9999, // LATER we will bump here on a problem once we have more than 9999 events <- no we won't, this is the max a user van view/page.
-            'order' => array('Sighting.date_sighting' => 'DESC'),
+        'limit' => 60,
+        'maxLimit' => 9999, // LATER we will bump here on a problem once we have more than 9999 events <- no we won't, this is the max a user van view/page.
+        'order' => array('Sighting.date_sighting' => 'DESC'),
     );
 
     // takes an attribute ID or UUID
@@ -68,9 +63,10 @@ class SightingsController extends AppController
                 }
                 $type = isset($this->request->data['type']) ? $this->request->data['type'] : '0';
                 $source = isset($this->request->data['source']) ? trim($this->request->data['source']) : '';
+                $filters = !empty($this->request->data['filters']) ? $this->request->data['filters'] : false;
             }
             if (!$error) {
-                $result = $this->Sighting->saveSightings($id, $values, $timestamp, $this->Auth->user(), $type, $source, false, true);
+                $result = $this->Sighting->saveSightings($id, $values, $timestamp, $this->Auth->user(), $type, $source, false, true, false, $filters);
             }
             if (!is_numeric($result)) {
                 $error = $result;
@@ -78,9 +74,9 @@ class SightingsController extends AppController
             if ($this->request->is('ajax')) {
                 if ($error) {
                     $error_message = 'Could not add the Sighting. Reason: ' . $error;
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => false, 'errors' => $error_message)), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => false, 'errors' => $error_message)), 'status' => 200, 'type' => 'json'));
                 } else {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'success' => $result . ' ' . $this->Sighting->type[$type] . (($result == 1) ? '' : 's') . '  added.')), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'success' => $result . ' ' . Sighting::TYPE[$type] . (($result == 1) ? '' : 's') . '  added.')), 'status' => 200, 'type' => 'json'));
                 }
             } else {
                 if ($error) {
@@ -136,8 +132,7 @@ class SightingsController extends AppController
                 throw new MethodNotAllowedException('Invalid attribute.');
             }
         } else {
-            $this->loadModel('Event');
-            $events = $this->Event->fetchEvent($this->Auth->user(), array('eventid' => $id, 'metadata' => true));
+            $events = $this->Sighting->Event->fetchEvent($this->Auth->user(), array('eventid' => $id, 'metadata' => true));
             if (empty($events)) {
                 throw new MethodNotAllowedException('Invalid event.');
             }
@@ -147,7 +142,7 @@ class SightingsController extends AppController
         $this->render('/Sightings/ajax/advanced');
     }
 
-    public function quickAdd($id=false, $type=1, $onvalue=false)
+    public function quickAdd($id = false, $type = 1, $onvalue = false)
     {
         if (!$this->userRole['perm_modify_org']) {
             throw new MethodNotAllowedException(__('You are not authorised to remove sightings data as you don\'t have permission to modify your organisation\'s data.'));
@@ -174,7 +169,7 @@ class SightingsController extends AppController
             }
         } else {
             if (!isset($id)) {
-                return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'errors' => __('Invalid request.'))), 'status' => 200, 'type' => 'json'));
+                return new CakeResponse(array('body' => json_encode(array('saved' => true, 'errors' => __('Invalid request.'))), 'status' => 200, 'type' => 'json'));
             } else {
                 if ($onvalue) {
                     $result = $this->Sighting->add();
@@ -183,9 +178,9 @@ class SightingsController extends AppController
                 }
 
                 if ($result) {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'success' => __('Sighting added.'))), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'success' => __('Sighting added.'))), 'status' => 200, 'type' => 'json'));
                 } else {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'errors' => __('Sighting could not be added'))), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'errors' => __('Sighting could not be added'))), 'status' => 200, 'type' => 'json'));
                 }
             }
         }
@@ -204,20 +199,20 @@ class SightingsController extends AppController
             $this->render('ajax/quickDeleteConfirmationForm');
         } else {
             if (!isset($id)) {
-                return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'errors' => 'Invalid request.')), 'status' => 200, 'type' => 'json'));
+                return new CakeResponse(array('body' => json_encode(array('saved' => true, 'errors' => 'Invalid request.')), 'status' => 200, 'type' => 'json'));
             } else {
                 $sighting = $this->Sighting->find('first', array('conditions' => array('Sighting.id' => $id), 'recursive' => -1));
                 if (empty($sighting)) {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'errors' => 'Invalid sighting.')), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'errors' => 'Invalid sighting.')), 'status' => 200, 'type' => 'json'));
                 }
                 if (!$this->_isSiteAdmin() && $sighting['Sighting']['org_id'] != $this->Auth->user('org_id')) {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'errors' => 'Invalid sighting.')), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'errors' => 'Invalid sighting.')), 'status' => 200, 'type' => 'json'));
                 }
                 $result = $this->Sighting->delete($id);
                 if ($result) {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'success' => 'Sighting deleted.')), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'success' => 'Sighting deleted.')), 'status' => 200, 'type' => 'json'));
                 } else {
-                    return new CakeResponse(array('body'=> json_encode(array('saved' => true, 'errors' => 'Sighting could not be deleted')), 'status' => 200, 'type' => 'json'));
+                    return new CakeResponse(array('body' => json_encode(array('saved' => true, 'errors' => 'Sighting could not be deleted')), 'status' => 200, 'type' => 'json'));
                 }
             }
         }
@@ -253,24 +248,16 @@ class SightingsController extends AppController
 
     public function index($eventid = false)
     {
-        $this->loadModel('Event');
-        $sightingConditions = array();
-        if ($eventid) {
-            $sightingConditions = array('Sighting.event_id' => $eventid);
-        }
-        $sightedEvents = $this->Sighting->find('list', array(
-            'group' => 'Sighting.event_id',
+        $sightingConditions = $eventid ? array('Sighting.event_id' => $eventid) : [];
+        $sightedEvents = $this->Sighting->find('column', array(
             'fields' => array('Sighting.event_id'),
-            'conditions' => $sightingConditions
+            'conditions' => $sightingConditions,
+            'unique' => true,
         ));
         if (empty($sightedEvents)) {
             $this->RestResponse->viewData(array());
         }
-        $conditions = array('metadata' => true, 'contain' => false);
-        if ($eventid) {
-            $conditions['eventid'] = $sightedEvents;
-        }
-        $events = $this->Event->fetchEventIds($this->Auth->user(), [
+        $events = $this->Sighting->Event->fetchEventIds($this->Auth->user(), [
             'eventIdList' => $sightedEvents
         ]);
         $sightings = array();
@@ -311,10 +298,9 @@ class SightingsController extends AppController
 
     public function viewSightings($id, $context = 'attribute')
     {
-        $this->loadModel('Event');
         $id = $this->Sighting->explodeIdList($id);
         if ($context === 'attribute') {
-            $objects = $this->Event->Attribute->fetchAttributes($this->Auth->user(), array('conditions' => array('Attribute.id' => $id, 'Attribute.deleted' => 0), 'flatten' => 1));
+            $objects = $this->Sighting->Event->Attribute->fetchAttributes($this->Auth->user(), array('conditions' => array('Attribute.id' => $id, 'Attribute.deleted' => 0), 'flatten' => 1));
             if (empty($objects)) {
                 throw new MethodNotAllowedException('Invalid object.');
             }
@@ -322,7 +308,7 @@ class SightingsController extends AppController
         } elseif ($context === 'event') {
             // let's set the context to event here, since we reuse the variable later on for some additional lookups.
             // Passing $context = 'org' could have interesting results otherwise...
-            $events = $this->Event->fetchSimpleEvents($this->Auth->user(), ['conditions' => ['id' => $id]]);
+            $events = $this->Sighting->Event->fetchSimpleEvents($this->Auth->user(), ['conditions' => ['id' => $id]]);
             $statistics = $this->Sighting->eventsStatistic($events, $this->Auth->user(), true);
         } else {
             throw new MethodNotAllowedException('Invalid context');
@@ -354,5 +340,27 @@ class SightingsController extends AppController
         } catch (NotFoundException $e) {
             throw new MethodNotAllowedException($e->getMessage());
         }
+    }
+
+    public function filterSightingUuidsForPush($eventId)
+    {
+        if (!$this->request->is('post')) {
+            throw new MethodNotAllowedException('This method is only accessible via POST requests.');
+        }
+
+        $event = $this->Sighting->Event->fetchSimpleEvent($this->Auth->user(), $eventId);
+        if (empty($event)) {
+            throw new NotFoundException("Event not found");
+        }
+
+        $incomingSightingUuids = $this->request->data;
+        $existingSightingUuids = $this->Sighting->find('column', [
+            'fields' => ['Sighting.uuid'],
+            'conditions' => [
+                'Sighting.uuid' => $incomingSightingUuids,
+                'Sighting.event_id' => $event['Event']['id']
+            ],
+        ]);
+        return $this->RestResponse->viewData($existingSightingUuids, $this->response->type());
     }
 }

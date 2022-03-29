@@ -17,6 +17,8 @@ MISPvars
 # $ MISPvars
 MISPvars () {
   debug "Setting generic ${LBLUE}MISP${NC} variables shared by all flavours" 2> /dev/null
+  # Some distros have no openssl installed by default, catch that exception.
+  $(openssl help 2> /dev/null) || (echo "No openssl, please install to continue"; exit -1)
   # Local non-root MISP user
   MISP_USER="${MISP_USER:-misp}"
   MISP_PASSWORD="${MISP_PASSWORD:-$(openssl rand -hex 32)}"
@@ -57,7 +59,8 @@ MISPvars () {
   # MISP configuration variables
   PATH_TO_MISP="${PATH_TO_MISP:-/var/www/MISP}"
   PATH_TO_MISP_SCRIPTS="${PATH_TO_MISP}/app/files/scripts"
-
+  ## For future use
+  # TMPDIR="${TMPDIR:-$PATH_TO_MISP/app/tmp}"
 
   FQDN="${FQDN:-misp.local}"
 

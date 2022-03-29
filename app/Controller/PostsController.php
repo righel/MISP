@@ -9,12 +9,9 @@ App::uses('AppController', 'Controller');
 class PostsController extends AppController
 {
     public $components = array(
-        'Security',
         'Session',
         'RequestHandler'
     );
-
-    public $helpers = array('Js' => array('Jquery'));
 
     public $paginate = array(
             'limit' => 60,

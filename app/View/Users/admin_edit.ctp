@@ -11,26 +11,27 @@
         <div class="clear"></div>
     <?php
         $password = true;
-        if (Configure::read('Plugin.CustomAuth_enable')):
-            if (Configure::read('Plugin.CustomAuth_required')):
+        if (Configure::read('Plugin.CustomAuth_enable')) {
+            if (Configure::read('Plugin.CustomAuth_required')) {
                 $password = false;
-            else:
+            } else {
                 $userType = Configure::read('Plugin.CustomAuth_name') ? Configure::read('Plugin.CustomAuth_name') : 'External authentication';
-                echo $this->Form->input('external_auth_required', array('type' => 'checkbox', 'label' => $userType . ' user'));
-            endif;
-
-    ?>
-        <div class="clear"></div>
-        <div id="externalAuthDiv">
-        <?php
-            echo $this->Form->input('external_auth_key', array('type' => 'text'));
-        ?>
-        </div>
-    <?php
-        endif;
+                echo $this->Form->input('external_auth_required', array('type' => 'checkbox', 'label' => h($userType) . ' user'));
+            }
+            echo sprintf(
+                '<div class="clear"></div><div %s>%s</div>',
+                (
+                    (
+                        !empty(Configure::read('Plugin.CustomAuth_required')) &&
+                        !empty(Configure::read('Plugin.CustomAuth_enable'))
+                    ) ? '' : sprintf('id="externalAuthDiv"')
+                ),
+                $this->Form->input('external_auth_key', array('type' => 'text'))
+            );
+        }
     ?>
     <div class="clear"></div>
-    <div id="passwordDivDiv">
+    <div id="passwordDivDiv" style="<?= (!empty(Configure::read('Plugin.CustomAuth_required')) && !empty(Configure::read('Plugin.CustomAuth_enable'))) ? 'display:none;' : ''?>">
         <?php
             echo $this->Form->input('enable_password', [
                 'type' => 'checkbox',
@@ -59,9 +60,14 @@
                     'label' => __('Organisation'),
             ));
         }
-        echo $this->Form->input('role_id', array('label' => __('Role')));   // TODO ACL, User edit role_id.
-        $authkeyLabel = __('Authkey') . ' <a class="useCursorPointer" onclick="$(\'#resetAuthKeyForm\').submit();">' . __('(Reset)') . '</a>';
-        echo $this->Form->input('authkey', array('disabled' => true, 'div' => 'input clear', 'label' => $authkeyLabel));
+        echo $this->Form->input('role_id', array(
+            'label' => __('Role'),
+            'div' => empty(Configure::read('Security.advanced_authkeys')) ? null : 'input clear'
+        ));
+        if (empty(Configure::read('Security.advanced_authkeys'))) {
+            $authkeyLabel = __('Authkey') . ' <a class="useCursorPointer" onclick="$(\'#resetAuthKeyForm\').submit();">' . __('(Reset)') . '</a>';
+            echo $this->Form->input('authkey', array('disabled' => true, 'div' => 'input clear', 'label' => $authkeyLabel));
+        }
         echo $this->Form->input('nids_sid', ['label' => __('NIDS SID')]);
     ?>
         <div id="syncServers" class="hidden">

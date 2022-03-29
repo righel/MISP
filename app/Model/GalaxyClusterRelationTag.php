@@ -1,10 +1,13 @@
 <?php
 App::uses('AppModel', 'Model');
 
+/**
+ * @property Tag $Tag
+ */
 class GalaxyClusterRelationTag extends AppModel
 {
     public $useTable = 'galaxy_cluster_relation_tags';
-    public $actsAs = array('Containable');
+    public $actsAs = array('AuditLog', 'Containable');
 
     public $validate = array(
         'galaxy_cluster_relation_id' => array(
@@ -28,16 +31,6 @@ class GalaxyClusterRelationTag extends AppModel
         ),
     );
 
-    public function afterSave($created, $options = array())
-    {
-        parent::afterSave($created, $options);
-    }
-
-    public function beforeDelete($cascade = true)
-    {
-        parent::beforeDelete($cascade);
-    }
-
     public function softDelete($id)
     {
         $this->delete($id);
@@ -50,7 +43,7 @@ class GalaxyClusterRelationTag extends AppModel
      * @param  int   $galaxyClusterRelationId
      * @param  array $tags list of tag names to be saved
      * @param  bool  $capture
-     * @return void
+     * @return bool
      */
     public function attachTags(array $user, $galaxyClusterRelationId, array $tags, $capture=false)
     {

@@ -12,7 +12,7 @@ class DashboardsController extends AppController
     public function beforeFilter()
     {
         parent::beforeFilter();
-        $this->Security->unlockedActions = array_merge(array('renderWidget', 'updateSettings', 'getForm'), $this->Security->unlockedActions);
+        $this->Security->unlockedActions = array_merge(array('renderWidget', 'getForm'), $this->Security->unlockedActions);
     }
 
     public $paginate = array(
@@ -113,14 +113,14 @@ class DashboardsController extends AppController
     {
         if ($this->request->is('post')) {
             $this->UserSetting = ClassRegistry::init('UserSetting');
-            if (!isset($this->request->data['value'])) {
+            if (!isset($this->request->data['Dashboard']['value'])) {
                 throw new InvalidArgumentException(__('No setting data found.'));
             }
             $data = array(
                 'UserSetting' => array(
                     'user_id' => $this->Auth->user('id'),
                     'setting' => 'dashboard',
-                    'value' => $this->request->data['value']
+                    'value' => $this->request->data['Dashboard']['value']
                 )
             );
             $result = $this->UserSetting->setSetting($this->Auth->user(), $data);
@@ -154,6 +154,7 @@ class DashboardsController extends AppController
             throw new MethodNotAllowedException(__('This endpoint can only be reached via POST requests.'));
         }
 
+        $user = $this->Auth->user();
         @session_write_close(); // allow concurrent AJAX requests (session hold lock by default)
 
         if (empty($this->request->data['data'])) {
@@ -164,10 +165,10 @@ class DashboardsController extends AppController
         }
         $value = $this->request->data['data'];
         $valueConfig = json_decode($value['config'], true);
-        $dashboardWidget = $this->Dashboard->loadWidget($this->Auth->user(), $value['widget']);
+        $dashboardWidget = $this->Dashboard->loadWidget($user, $value['widget']);
 
         $redis = $this->Dashboard->setupRedis();
-        $org_scope = $this->_isSiteAdmin() ? 0 : $this->Auth->user('org_id');
+        $org_scope = $this->_isSiteAdmin() ? 0 : $user['org_id'];
         $lookup_hash = hash('sha256', $value['widget'] . $value['config']);
         $cacheKey = 'misp:dashboard:' . $org_scope . ':' . $lookup_hash;
         $data = $redis->get($cacheKey);
@@ -175,7 +176,7 @@ class DashboardsController extends AppController
             $dashboardWidget->cacheLifetime = false;
         }
         if (empty($dashboardWidget->cacheLifetime) || empty($data)) {
-            $data = $dashboardWidget->handler($this->Auth->user(), $valueConfig);
+            $data = $dashboardWidget->handler($user, $valueConfig);
             if (!empty($dashboardWidget->cacheLifetime)) {
                 $redis->setex($cacheKey, $dashboardWidget->cacheLifetime, json_encode(array('data' => $data)));
             }

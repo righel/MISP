@@ -7,10 +7,8 @@ class GalaxyElement extends AppModel
     public $recursive = -1;
 
     public $actsAs = array(
+        'AuditLog',
             'Containable',
-    );
-
-    public $validate = array(
     );
 
     public $belongsTo = array(
@@ -19,12 +17,6 @@ class GalaxyElement extends AppModel
                 'foreignKey' => 'galaxy_cluster_id',
             )
     );
-
-    public function beforeValidate($options = array())
-    {
-        parent::beforeValidate();
-        return true;
-    }
 
     public function updateElements($oldClusterId, $newClusterId, $elements, $delete=true)
     {

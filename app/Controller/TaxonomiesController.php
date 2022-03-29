@@ -59,17 +59,29 @@ class TaxonomiesController extends AppController
 
     public function view($id)
     {
-        if (isset($this->passedArgs['pages'])) {
-            $currentPage = $this->passedArgs['pages'];
-        } else {
-            $currentPage = 1;
+        $taxonomy = $this->Taxonomy->getTaxonomy($id, ['full' => $this->_isRest()]);
+        if (empty($taxonomy)) {
+            throw new NotFoundException(__('Taxonomy not found.'));
         }
-        $this->set('page', $currentPage);
+
+        if ($this->_isRest()) {
+            return $this->RestResponse->viewData($taxonomy, $this->response->type());
+        }
+
+        $this->set('taxonomy', $taxonomy['Taxonomy']);
+        $this->set('id', $taxonomy['Taxonomy']['id']);
+    }
+
+    public function taxonomy_tags($id)
+    {
         $urlparams = '';
-        $passedArgs = array();
         App::uses('CustomPaginationTool', 'Tools');
         $filter = isset($this->passedArgs['filter']) ? $this->passedArgs['filter'] : false;
-        $taxonomy = $this->Taxonomy->getTaxonomy($id, array('full' => true, 'filter' => $filter));
+        $options = ['full' => true, 'filter' => $filter];
+        if (isset($this->passedArgs['enabled'])) {
+            $options['enabled'] = $this->passedArgs['enabled'];
+        }
+        $taxonomy = $this->Taxonomy->getTaxonomy($id, $options);
         if (empty($taxonomy)) {
             throw new NotFoundException(__('Taxonomy not found.'));
         }
@@ -103,13 +115,70 @@ class TaxonomiesController extends AppController
             return $this->RestResponse->viewData($taxonomy, $this->response->type());
         }
 
+        if (isset($this->passedArgs['pages'])) {
+            $currentPage = $this->passedArgs['pages'];
+        } else {
+            $currentPage = 1;
+        }
+        $this->set('page', $currentPage);
+
         $this->set('entries', $taxonomy['entries']);
         $this->set('urlparams', $urlparams);
-        $this->set('passedArgs', json_encode($passedArgs));
-        $this->set('passedArgsArray', $passedArgs);
+        $this->set('passedArgs', json_encode($this->passedArgs));
+        $this->set('passedArgsArray', $this->passedArgs);
         $this->set('taxonomy', $taxonomy['Taxonomy']);
-        $this->set('id', $id);
+        $this->set('id', $taxonomy['Taxonomy']['id']);
         $this->set('title_for_layout', __('%s Taxonomy Library', h(strtoupper($taxonomy['Taxonomy']['namespace']))));
+        $this->render('ajax/taxonomy_tags');
+    }
+
+    public function export($id)
+    {
+        $taxonomy = $this->Taxonomy->find('first', [
+            'recursive' => -1,
+            'contain' => ['TaxonomyPredicate' => ['TaxonomyEntry']],
+            'conditions' => is_numeric($id) ? ['Taxonomy.id' => $id] : ['LOWER(Taxonomy.namespace)' => mb_strtolower($id)],
+        ]);
+        if (empty($taxonomy)) {
+            throw new NotFoundException(__('Taxonomy not found.'));
+        }
+
+        $data = [
+            'namespace' => $taxonomy['Taxonomy']['namespace'],
+            'description' => $taxonomy['Taxonomy']['description'],
+            'version' => (int)$taxonomy['Taxonomy']['version'],
+            'exclusive' => $taxonomy['Taxonomy']['exclusive'],
+            'predicates' => [],
+        ];
+
+        foreach ($taxonomy['TaxonomyPredicate'] as $predicate) {
+            $predicateOutput = [];
+            foreach (['value', 'expanded', 'colour', 'description', 'exclusive', 'numerical_value'] as $field) {
+                if (isset($predicate[$field]) && !empty($predicate[$field])) {
+                    $predicateOutput[$field] = $predicate[$field];
+                }
+            }
+            $data['predicates'][] = $predicateOutput;
+
+            if (!empty($predicate['TaxonomyEntry'])) {
+                $entries = [];
+                foreach ($predicate['TaxonomyEntry'] as $entry) {
+                    $entryOutput = [];
+                    foreach(['value', 'expanded', 'colour', 'description', 'exclusive', 'numerical_value'] as $field) {
+                        if (isset($entry[$field]) && !empty($entry[$field])) {
+                            $entryOutput[$field] = $entry[$field];
+                        }
+                    }
+                    $entries[] = $entryOutput;
+                }
+                $data['values'][] = [
+                    'predicate' => $predicate['value'],
+                    'entry' => $entries,
+                ];
+            }
+        }
+
+        return $this->RestResponse->viewData($data, 'json');
     }
 
     public function enable($id)
@@ -269,40 +338,55 @@ class TaxonomiesController extends AppController
 
     public function addTag($taxonomy_id = false)
     {
-        if ((!$this->_isSiteAdmin() && !$this->userRole['perm_tagger']) || !$this->request->is('post')) {
+        if ((!$this->_isSiteAdmin() && !$this->userRole['perm_tagger'])) {
             throw new NotFoundException(__('You don\'t have permission to do that.'));
         }
-        if ($taxonomy_id) {
-            $result = $this->Taxonomy->addTags($taxonomy_id);
-        } else {
-            if (isset($this->request->data['Taxonomy'])) {
-                $this->request->data['Tag'] = $this->request->data['Taxonomy'];
-                unset($this->request->data['Taxonomy']);
+        if ($this->request->is('get')) {
+            if (empty($taxonomy_id) && !empty($this->request->params['named']['taxonomy_id'])) {
+                $taxonomy_id = $this->request->params['named']['taxonomy_id'];
             }
-            if (isset($this->request->data['Tag']['request'])) {
-                $this->request->data['Tag'] = $this->request->data['Tag']['request'];
-            }
-            if (!isset($this->request->data['Tag']['nameList'])) {
-                $this->request->data['Tag']['nameList'] = array($this->request->data['Tag']['name']);
+            if (
+                empty($taxonomy_id) ||
+                empty($this->request->params['named']['name'])
+            ) {
+                throw new MethodNotAllowedException(__('Taxonomy ID or tag name must be provided.'));
             } else {
-                $this->request->data['Tag']['nameList'] = json_decode($this->request->data['Tag']['nameList'], true);
+                $this->request->data['Taxonomy']['taxonomy_id'] = $taxonomy_id;
+                $this->request->data['Taxonomy']['name'] = $this->request->params['named']['name'];
             }
-            $result = $this->Taxonomy->addTags($this->request->data['Tag']['taxonomy_id'], $this->request->data['Tag']['nameList']);
-        }
-        if ($result) {
-            $message = __('The tag(s) has been saved.');
-            if ($this->_isRest()) {
-                return $this->RestResponse->saveSuccessResponse('Taxonomy', 'addTag', $taxonomy_id, $this->response->type(), $message);
-            }
-            $this->Flash->success($message);
         } else {
-            $message = __('The tag(s) could not be saved. Please, try again.');
-            if ($this->_isRest()) {
-                return $this->RestResponse->saveFailResponse('Taxonomy', 'addTag', $taxonomy_id, $message, $this->response->type());
+            if ($taxonomy_id) {
+                $result = $this->Taxonomy->addTags($taxonomy_id);
+            } else {
+                if (isset($this->request->data['Taxonomy'])) {
+                    $this->request->data['Tag'] = $this->request->data['Taxonomy'];
+                    unset($this->request->data['Taxonomy']);
+                }
+                if (isset($this->request->data['Tag']['request'])) {
+                    $this->request->data['Tag'] = $this->request->data['Tag']['request'];
+                }
+                if (!isset($this->request->data['Tag']['nameList'])) {
+                    $this->request->data['Tag']['nameList'] = array($this->request->data['Tag']['name']);
+                } else {
+                    $this->request->data['Tag']['nameList'] = json_decode($this->request->data['Tag']['nameList'], true);
+                }
+                $result = $this->Taxonomy->addTags($this->request->data['Tag']['taxonomy_id'], $this->request->data['Tag']['nameList']);
             }
-            $this->Flash->error($message);
+            if ($result) {
+                $message = __('The tag(s) has been saved.');
+                if ($this->_isRest()) {
+                    return $this->RestResponse->saveSuccessResponse('Taxonomy', 'addTag', $taxonomy_id, $this->response->type(), $message);
+                }
+                $this->Flash->success($message);
+            } else {
+                $message = __('The tag(s) could not be saved. Please, try again.');
+                if ($this->_isRest()) {
+                    return $this->RestResponse->saveFailResponse('Taxonomy', 'addTag', $taxonomy_id, $message, $this->response->type());
+                }
+                $this->Flash->error($message);
+            }
+            $this->redirect($this->referer());
         }
-        $this->redirect($this->referer());
     }
 
     public function hideTag($taxonomy_id = false)
@@ -367,32 +451,47 @@ class TaxonomiesController extends AppController
 
     public function disableTag($taxonomy_id = false)
     {
-        if ((!$this->_isSiteAdmin() && !$this->userRole['perm_tagger']) || !$this->request->is('post')) {
+        if ((!$this->_isSiteAdmin() && !$this->userRole['perm_tagger'])) {
             throw new NotFoundException(__('You don\'t have permission to do that.'));
         }
-        if ($taxonomy_id) {
-            $result = $this->Taxonomy->disableTags($taxonomy_id);
-        } else {
-            if (isset($this->request->data['Taxonomy'])) {
-                $this->request->data['Tag'] = $this->request->data['Taxonomy'];
-                unset($this->request->data['Taxonomy']);
+        if ($this->request->is('get')) {
+            if (empty($taxonomy_id) && !empty($this->request->params['named']['taxonomy_id'])) {
+                $taxonomy_id = $this->request->params['named']['taxonomy_id'];
             }
-            if (isset($this->request->data['Tag']['request'])) {
-                $this->request->data['Tag'] = $this->request->data['Tag']['request'];
-            }
-            if (!isset($this->request->data['Tag']['nameList'])) {
-                $this->request->data['Tag']['nameList'] = array($this->request->data['Tag']['name']);
+            if (
+                empty($taxonomy_id) ||
+                empty($this->request->params['named']['name'])
+            ) {
+                throw new MethodNotAllowedException(__('Taxonomy ID or tag name must be provided.'));
             } else {
-                $this->request->data['Tag']['nameList'] = json_decode($this->request->data['Tag']['nameList'], true);
+                $this->request->data['Taxonomy']['taxonomy_id'] = $taxonomy_id;
+                $this->request->data['Taxonomy']['name'] = $this->request->params['named']['name'];
             }
-            $result = $this->Taxonomy->disableTags($this->request->data['Tag']['taxonomy_id'], $this->request->data['Tag']['nameList']);
-        }
-        if ($result) {
-            $this->Flash->success(__('The tag(s) has been hidden.'));
         } else {
-            $this->Flash->error(__('The tag(s) could not be hidden. Please, try again.'));
+            if ($taxonomy_id) {
+                $result = $this->Taxonomy->disableTags($taxonomy_id);
+            } else {
+                if (isset($this->request->data['Taxonomy'])) {
+                    $this->request->data['Tag'] = $this->request->data['Taxonomy'];
+                    unset($this->request->data['Taxonomy']);
+                }
+                if (isset($this->request->data['Tag']['request'])) {
+                    $this->request->data['Tag'] = $this->request->data['Tag']['request'];
+                }
+                if (!isset($this->request->data['Tag']['nameList'])) {
+                    $this->request->data['Tag']['nameList'] = array($this->request->data['Tag']['name']);
+                } else {
+                    $this->request->data['Tag']['nameList'] = json_decode($this->request->data['Tag']['nameList'], true);
+                }
+                $result = $this->Taxonomy->disableTags($this->request->data['Tag']['taxonomy_id'], $this->request->data['Tag']['nameList']);
+            }
+            if ($result) {
+                $this->Flash->success(__('The tag(s) has been hidden.'));
+            } else {
+                $this->Flash->error(__('The tag(s) could not be hidden. Please, try again.'));
+            }
+            $this->redirect($this->referer());
         }
-        $this->redirect($this->referer());
     }
 
     public function taxonomyMassConfirmation($id)

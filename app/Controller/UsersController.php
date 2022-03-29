@@ -9,9 +9,7 @@ class UsersController extends AppController
     public $newkey;
 
     public $components = array(
-            'Security',
-            'Email',
-            'RequestHandler'
+        'RequestHandler'
     );
 
     public $paginate = array(
@@ -26,7 +24,7 @@ class UsersController extends AppController
         )
     );
 
-    public $helpers = array('Js' => array('Jquery'));
+    public $toggleableFields = ['disabled', 'autoalert'];
 
     public function beforeFilter()
     {
@@ -45,7 +43,7 @@ class UsersController extends AppController
 
     public function view($id = null)
     {
-        if ("me" == $id) {
+        if ("me" === $id) {
             $id = $this->Auth->user('id');
         }
         if (!$this->_isSiteAdmin() && $this->Auth->user('id') != $id) {
@@ -72,13 +70,6 @@ class UsersController extends AppController
             $user['User']['fingerprint'] = !empty($pgpDetails[4]) ? $pgpDetails[4] : 'N/A';
         }
         if ($this->_isRest()) {
-            unset($user['User']['server_id']);
-            $user['User']['password'] = '*****';
-            $temp = array();
-            foreach ($user['UserSetting'] as $k => $v) {
-                $temp[$v['setting']] = $v['value'];
-            }
-            $user['UserSetting'] = $temp;
             return $this->RestResponse->viewData($this->__massageUserObject($user), $this->response->type());
         } else {
             $this->set('user', $user);
@@ -86,13 +77,19 @@ class UsersController extends AppController
         }
     }
 
-    private function __massageUserObject($user)
+    /**
+     * @param array $user
+     * @return array
+     */
+    private function __massageUserObject(array $user)
     {
+        $user['UserSetting'] = array_column($user['UserSetting'], 'value', 'setting');
         unset($user['User']['server_id']);
         if (!empty(Configure::read('Security.advanced_authkeys'))) {
             unset($user['User']['authkey']);
         }
         $user['User']['password'] = '*****';
+        $temp = [];
         $objectsToInclude = array('User', 'Role', 'UserSetting', 'Organisation');
         foreach ($objectsToInclude as $objectToInclude) {
             if (isset($user[$objectToInclude])) {
@@ -473,11 +470,6 @@ class UsersController extends AppController
                 }
                 $this->set('users', $users);
             }
-            if ($this->request->is('ajax')) {
-                $this->autoRender = false;
-                $this->layout = false;
-                $this->render('ajax/admin_index');
-            }
         }
     }
 
@@ -719,7 +711,7 @@ class UsersController extends AppController
                             $fail = false;
                         }
                     }
-                    if ($abortPost) {
+                    if ($fail) {
                         $this->Flash->error(__('Invalid e-mail domain. Your user is restricted to creating users for the following domain(s): ') . implode(', ', $organisation['Organisation']['restricted_to_domain']));
                     }
                 }
@@ -747,7 +739,7 @@ class UsersController extends AppController
                                 $notification_message .= ' ' . __('User notification of new credentials could not be send.');
                             }
                         }
-                        if (!empty(Configure::read('Security.advanced_authkeys'))) {
+                        if (!empty(Configure::read('Security.advanced_authkeys')) && $this->_isRest()) {
                             $this->loadModel('AuthKey');
                             $newKey = $this->AuthKey->createnewkey($this->User->id);
                         }
@@ -1095,6 +1087,54 @@ class UsersController extends AppController
         $this->redirect(array('action' => 'index'));
     }
 
+    public function admin_massToggleField($fieldName, $enabled)
+    {
+        if (!in_array($fieldName, $this->toggleableFields)) {
+            throw new MethodNotAllowedException(__('The field `%s` cannot be toggled', $fieldName));
+        }
+        if (!$this->_isAdmin()) {
+            throw new UnauthorizedException(__('Administrators only'));
+        }
+        if ($this->request->is('post') || $this->request->is('put')) {
+            $jsonIds = $this->request->data['User']['user_ids'];
+            $ids = $this->User->jsonDecode($jsonIds);
+            $conditions = ['User.id' => $ids];
+            if (!$this->_isSiteAdmin()) {
+                $conditions['User.org_id'] = $this->Auth->user('org_id');
+            }
+            $users = $this->User->find('all', [
+                    'conditions' => $conditions,
+                    'recursive' => -1
+            ]);
+            if (empty($users)) {
+                throw new NotFoundException(__('Invalid users'));
+            }
+            $count = 0;
+            foreach ($users as $user) {
+                if ($user['User'][$fieldName] != $enabled) {
+                    $this->User->id = $user['User']['id'];
+                    $this->User->saveField($fieldName, $enabled);
+                    $count++;
+                }
+            }
+            if ($count > 0) {
+                $message = __('%s users got their field `%s` %s', $count, $fieldName, $enabled ? __('enabled') : __('disabled'));
+            } else {
+                $message = __('All users have already their field `%s` %s', $fieldName, $enabled ? __('enabled') : __('disabled'));
+            }
+            if ($this->_isRest()) {
+                return $this->RestResponse->saveSuccessResponse('User', 'admin_massToggleField', 'selected', $this->response->type(), $message);
+            } else {
+                if ($count > 0) {
+                    $this->Flash->success($message);
+                } else {
+                    $this->Flash->info($message);
+                }
+                $this->redirect('/admin/users/index');
+            }
+        }
+    }
+
     public function updateLoginTime()
     {
         if (!$this->request->is('post')) {
@@ -1168,8 +1208,7 @@ class UsersController extends AppController
                 }
             }
             // populate the DB with the first role (site admin) if it's empty
-            $this->loadModel('Role');
-            if ($this->Role->find('count') == 0) {
+            if (!$this->User->Role->hasAny()) {
                 $siteAdmin = array('Role' => array(
                     'id' => 1,
                     'name' => 'Site Admin',
@@ -1188,14 +1227,14 @@ class UsersController extends AppController
                     'perm_template' => 1,
                     'perm_tagger' => 1,
                 ));
-                $this->Role->save($siteAdmin);
+                $this->User->Role->save($siteAdmin);
                 // PostgreSQL: update value of auto incremented serial primary key after setting the column by force
-                if ($dataSource == 'Database/Postgres') {
+                if ($dataSource === 'Database/Postgres') {
                     $sql = "SELECT setval('roles_id_seq', (SELECT MAX(id) FROM roles));";
-                    $this->Role->query($sql);
+                    $this->User->Role->query($sql);
                 }
             }
-            if ($this->User->Organisation->find('count', array('conditions' => array('Organisation.local' => true))) == 0) {
+            if (!$this->User->Organisation->hasAny(array('Organisation.local' => true))) {
                 $this->User->runUpdates();
                 $date = date('Y-m-d H:i:s');
                 $org = array('Organisation' => array(
@@ -1211,23 +1250,25 @@ class UsersController extends AppController
                 ));
                 $this->User->Organisation->save($org);
                 // PostgreSQL: update value of auto incremented serial primary key after setting the column by force
-                if ($dataSource == 'Database/Postgres') {
+                if ($dataSource === 'Database/Postgres') {
                     $sql = "SELECT setval('organisations_id_seq', (SELECT MAX(id) FROM organisations));";
                     $this->User->Organisation->query($sql);
                 }
                 $org_id = $this->User->Organisation->id;
-            } else {
-                $hostOrg = $this->User->Organisation->find('first', array('conditions' => array('Organisation.name' => Configure::read('MISP.org'), 'Organisation.local' => true), 'recursive' => -1));
-                if (!empty($hostOrg)) {
-                    $org_id = $hostOrg['Organisation']['id'];
-                } else {
-                    $firstOrg = $this->User->Organisation->find('first', array('conditions' => array('Organisation.local' => true), 'order' => 'Organisation.id ASC'));
-                    $org_id = $firstOrg['Organisation']['id'];
-                }
             }
 
             // populate the DB with the first user if it's empty
-            if ($this->User->find('count') == 0) {
+            if (!$this->User->hasAny()) {
+                if (!isset($org_id)) {
+                    $hostOrg = $this->User->Organisation->find('first', array('conditions' => array('Organisation.name' => Configure::read('MISP.org'), 'Organisation.local' => true), 'recursive' => -1));
+                    if (!empty($hostOrg)) {
+                        $org_id = $hostOrg['Organisation']['id'];
+                    } else {
+                        $firstOrg = $this->User->Organisation->find('first', array('conditions' => array('Organisation.local' => true), 'order' => 'Organisation.id ASC'));
+                        $org_id = $firstOrg['Organisation']['id'];
+                    }
+                }
+
                 $this->User->runUpdates();
                 $this->User->createInitialUser($org_id);
             }
@@ -1245,9 +1286,9 @@ class UsersController extends AppController
           ),
           'recursive' => -1
       ));
-      $lastUserLogin = $user['User']['last_login'];
       unset($user['User']['password']);
       $this->User->updateLoginTimes($user['User']);
+      $lastUserLogin = $user['User']['last_login'];
       $this->User->Behaviors->enable('SysLogLogable.SysLogLogable');
       if ($lastUserLogin) {
           $readableDatetime = (new DateTime())->setTimestamp($lastUserLogin)->format('D, d M y H:i:s O'); // RFC822
@@ -1261,6 +1302,11 @@ class UsersController extends AppController
     {
         // Events list
         $url = $this->Session->consume('pre_login_requested_url');
+        if (!empty(Configure::read('MISP.forceHTTPSforPreLoginRequestedURL')) && !empty($url)) {
+            if (substr($url, 0, 7) === "http://") {
+                $url = sprintf('https://%s', substr($url, 7));
+            }
+        }
         if (empty($url)) {
             $homepage = $this->User->UserSetting->getValueForUser($this->Auth->user('id'), 'homepage');
             if (!empty($homepage)) {
@@ -1348,9 +1394,9 @@ class UsersController extends AppController
         if (!$this->_isSiteAdmin() && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
             $org_ids = array($this->Auth->user('org_id'));
         } else {
-            $org_ids = $this->User->Event->find('list', array(
-                'fields' => array('Event.orgc_id', 'Event.orgc_id'),
-                'group' => array('Event.orgc_id')
+            $org_ids = $this->User->Event->find('column', array(
+                'fields' => array('Event.orgc_id'),
+                'unique' => true,
             ));
         }
         $orgs_temp = $this->User->Organisation->find('list', array(
@@ -1397,20 +1443,28 @@ class UsersController extends AppController
             $temp = $this->User->Event->Attribute->find('all', $params);
             $temp = Hash::combine($temp, '{n}.Attribute.type', '{n}.0.num_types');
             $total = 0;
-            foreach ($temp as $k => $v) {
-                if (intval($v) > $max) {
-                    $max = intval($v);
+            foreach ($temp as $v) {
+                $v = (int) $v;
+                if ($v > $max) {
+                    $max = $v;
                 }
-                $total += intval($v);
+                $total += $v;
             }
-            $data[$org_id]['data'] = $temp;
-            $data[$org_id]['org_name'] = $org_name;
-            $data[$org_id]['total'] = $total;
+            $data[$org_id] = [
+                'data' => $temp,
+                'org_name' => $org_name,
+                'total' => $total,
+            ];
         }
         uasort($data, function ($a, $b) {
             return $b['total'] - $a['total'];
         });
         $data = array_values($data);
+
+        if ($this->_isRest()) {
+            return $this->RestResponse->viewData($data, $this->response->type());
+        }
+
         $this->set('data', $data);
         $this->set('max', $max);
         $this->set('selectedTypes', $selectedTypes);
@@ -1424,13 +1478,10 @@ class UsersController extends AppController
         foreach ($sigTypes as $k => $type) {
             $typeDb[$type] = $colours[$k];
         }
-        if ($this->_isRest()) {
-            return $this->RestResponse->viewData($data, $this->response->type());
-        } else {
-            $this->set('typeDb', $typeDb);
-            $this->set('sigTypes', $sigTypes);
-            $this->layout = 'ajax';
-        }
+
+        $this->set('typeDb', $typeDb);
+        $this->set('sigTypes', $sigTypes);
+        $this->layout = 'ajax';
     }
 
     public function terms()
@@ -1740,7 +1791,7 @@ class UsersController extends AppController
             // Fetch user that contains also PGP or S/MIME keys for e-mail encryption
             $userForSendMail = $this->User->getUserById($user_id);
             $body = str_replace('\n', PHP_EOL, $body);
-            $result = $this->User->sendEmail($userForSendMail, $body, false, "[MISP] Email OTP");
+            $result = $this->User->sendEmail($userForSendMail, $body, false, "[" . Configure::read('MISP.org') . " MISP] Email OTP");
 
             if ($result) {
                 $this->Flash->success(__("An email containing a OTP has been sent."));
@@ -1760,7 +1811,7 @@ class UsersController extends AppController
         $x_forwarded = explode(",", $x_forwarded);
         return $x_forwarded[0];
       } elseif(!empty($client_ip)){
-        return $_client_ip;
+        return $client_ip;
       } else {
         return filter_input(INPUT_SERVER, 'REMOTE_ADDR', FILTER_SANITIZE_STRING);
       }
@@ -1769,58 +1820,70 @@ class UsersController extends AppController
     // shows some statistics about the instance
     public function statistics($page = 'data')
     {
-        $this->set('page', $page);
-        $pages = array('data' => __('Usage data'),
-                       'orgs' => __('Organisations'),
-                       'users' => __('User and Organisation statistics'),
-                       'tags' => __('Tags'),
-                       'attributehistogram' => __('Attribute histogram'),
-                       'sightings' => __('Sightings toplists'),
-                       'galaxyMatrix' => __('Galaxy Matrix'));
-        if (!$this->_isSiteAdmin() && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
-            unset($pages['orgs']);
+        $user = $this->Auth->user();
+        @session_write_close(); // loading this page can take long time, so we can close session
+
+        if (!$this->_isRest()) {
+            $pages = [
+                'data' => __('Usage data'),
+                'orgs' => __('Organisations'),
+                'users' => __('User and Organisation statistics'),
+                'tags' => __('Tags'),
+                'attributehistogram' => __('Attribute histogram'),
+                'sightings' => __('Sightings toplists'),
+                'galaxyMatrix' => __('Galaxy Matrix')
+            ];
+            if (!$this->_isSiteAdmin() && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
+                unset($pages['orgs']);
+            }
+
+            $this->set('page', $page);
+            $this->set('pages', $pages);
         }
-        $this->set('pages', $pages);
-        $result = array();
-        if ($page == 'data') {
-            $result = $this->__statisticsData($this->params['named']);
-        } elseif ($page == 'orgs') {
+
+        if ($page === 'data') {
+            $result = $this->__statisticsData($user, $this->params['named']);
+        } elseif ($page === 'orgs') {
             if (!$this->_isSiteAdmin() && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
                 throw new MethodNotAllowedException('This feature is currently disabled.');
             }
             $result = $this->__statisticsOrgs($this->params['named']);
-        } elseif ($page == 'users') {
+        } elseif ($page === 'users') {
             $result = $this->__statisticsUsers($this->params['named']);
-        } elseif ($page == 'tags') {
+        } elseif ($page === 'tags') {
             $result = $this->__statisticsTags($this->params['named']);
-        } elseif ($page == 'attributehistogram') {
+        } elseif ($page === 'attributehistogram') {
             if ($this->_isRest()) {
                 return $this->histogram($selected = null);
             } else {
                 $this->render('statistics_histogram');
             }
-        } elseif ($page == 'sightings') {
-            $result = $this->__statisticsSightings($this->params['named']);
-        } elseif ($page == 'galaxyMatrix') {
-            $result = $this->__statisticsGalaxyMatrix($this->params['named']);
+        } elseif ($page === 'sightings') {
+            $result = $this->__statisticsSightings($user, $this->params['named']);
+        } elseif ($page === 'galaxyMatrix') {
+            $result = $this->__statisticsGalaxyMatrix($user, $this->params['named']);
+        } else {
+            throw new NotFoundException("Invalid page");
         }
+
         if ($this->_isRest()) {
             return $result;
         }
     }
 
-    private function __statisticsData($params = array())
+    private function __statisticsData(array $user, $params = array())
     {
         // set all of the data up for the heatmaps
         $params = array(
-            'fields' => array('name'),
+            'fields' => array('id', 'name'),
             'recursive' => -1,
-            'conditions' => array()
+            'conditions' => array(),
+            'order' => ['name'],
         );
-        if (!$this->_isSiteAdmin() && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
-            $params['conditions'] = array('Organisation.id' => $this->Auth->user('org_id'));
+        if (!$user['Role']['perm_site_admin'] && !empty(Configure::read('Security.hide_organisation_index_from_users'))) {
+            $params['conditions'] = array('Organisation.id' => $user['org_id']);
         }
-        $orgs = $this->User->Organisation->find('all', $params);
+        $orgs = $this->User->Organisation->find('list', $params);
 
         $local_orgs_params = $params;
         $local_orgs_params['conditions']['Organisation.local'] = 1;
@@ -1843,12 +1906,10 @@ class UsersController extends AppController
         $stats['attribute_count_month'] = $this->User->Event->Attribute->find('count', array('conditions' => array('Attribute.timestamp >' => $this_month, 'Attribute.deleted' => 0), 'recursive' => -1));
         $stats['attributes_per_event'] = round($stats['attribute_count'] / $stats['event_count']);
 
-        $this->loadModel('Correlation');
-        $this->Correlation->recursive = -1;
-        $stats['correlation_count'] = $this->Correlation->find('count', array('recursive' => -1));
+        $stats['correlation_count'] = $this->User->Event->Attribute->Correlation->find('count', array('recursive' => -1));
         $stats['correlation_count'] = $stats['correlation_count'] / 2;
 
-        $stats['proposal_count'] = $this->User->Event->ShadowAttribute->find('count', array('recursive' => -1));
+        $stats['proposal_count'] = $this->User->Event->ShadowAttribute->find('count', array('recursive' => -1, 'conditions' => array('deleted' => 0)));
 
         $stats['user_count'] = $this->User->find('count', array('recursive' => -1));
         $stats['user_count_pgp'] = $this->User->find('count', array('recursive' => -1, 'conditions' => array('User.gpgkey !=' => '')));
@@ -1869,52 +1930,53 @@ class UsersController extends AppController
                 'stats' => $stats
             );
             return $this->RestResponse->viewData($data, $this->response->type());
-        } else {
-            $this->set('stats', $stats);
-            $this->set('orgs', $orgs);
-            $this->set('start', strtotime(date('Y-m-d H:i:s') . ' -5 months'));
-            $this->set('end', strtotime(date('Y-m-d H:i:s')));
-            $this->set('startDateCal', $year . ', ' . $month . ', 01');
-            $range = '[5, 10, 50, 100]';
-            $this->set('range', $range);
-            $this->render('statistics_data');
         }
+
+        $this->set('stats', $stats);
+        $this->set('orgs', $orgs);
+        $this->set('start', strtotime(date('Y-m-d H:i:s') . ' -5 months'));
+        $this->set('end', strtotime(date('Y-m-d H:i:s')));
+        $this->set('startDateCal', $year . ', ' . $month . ', 01');
+        $range = '[5, 10, 50, 100]';
+        $this->set('range', $range);
+        $this->set('activityUrl', $this->baseurl . (Configure::read('MISP.log_new_audit') ? '/audit_logs' : '/logs') . '/returnDates');
+        $this->render('statistics_data');
     }
 
-    private function __statisticsSightings($params = array())
+    private function __statisticsSightings(array $user, $params = array())
     {
         $this->loadModel('Sighting');
-        $conditions = array('Sighting.org_id' => $this->Auth->user('org_id'));
+        $conditions = ['Sighting.org_id' => $user['org_id']];
         if (isset($params['timestamp'])) {
             $conditions['Sighting.date_sighting >'] = $params['timestamp'];
         }
         $sightings = $this->Sighting->find('all', array(
             'conditions' => $conditions,
-            'fields' => array('Sighting.date_sighting', 'Sighting.type', 'Sighting.source', 'Sighting.event_id')
+            'fields' => ['Sighting.type', 'Sighting.source', 'Sighting.event_id'],
         ));
         $data = array();
         $toplist = array();
         $eventids = array();
-        foreach ($sightings as $k => $v) {
+        foreach ($sightings as $v) {
             if ($v['Sighting']['source'] == '') {
                 $v['Sighting']['source'] = 'Undefined';
             }
-            $v['Sighting']['type'] = array('sighting', 'false-positive', 'expiration')[$v['Sighting']['type']];
-            if (isset($data[$v['Sighting']['source']][$v['Sighting']['type']])) {
-                $data[$v['Sighting']['source']][$v['Sighting']['type']]++;
+            $type = array('sighting', 'false-positive', 'expiration')[$v['Sighting']['type']];
+            if (isset($data[$v['Sighting']['source']][$type])) {
+                $data[$v['Sighting']['source']][$type]++;
             } else {
-                $data[$v['Sighting']['source']][$v['Sighting']['type']] = 1;
+                $data[$v['Sighting']['source']][$type] = 1;
             }
             if (!isset($toplist[$v['Sighting']['source']])) {
                 $toplist[$v['Sighting']['source']] = 1;
             } else {
                 $toplist[$v['Sighting']['source']]++;
             }
-            if (!isset($eventids[$v['Sighting']['source']][$v['Sighting']['type']])) {
-                $eventids[$v['Sighting']['source']][$v['Sighting']['type']] = array();
+            if (!isset($eventids[$v['Sighting']['source']][$type])) {
+                $eventids[$v['Sighting']['source']][$type] = [];
             }
-            if (!in_array($v['Sighting']['event_id'], $eventids[$v['Sighting']['source']][$v['Sighting']['type']])) {
-                $eventids[$v['Sighting']['source']][$v['Sighting']['type']][] = $v['Sighting']['event_id'];
+            if (!in_array($v['Sighting']['event_id'], $eventids[$v['Sighting']['source']][$type])) {
+                $eventids[$v['Sighting']['source']][$v['Sighting']['type']][] = $type;
             }
         }
         arsort($toplist);
@@ -1934,7 +1996,6 @@ class UsersController extends AppController
 
     private function __statisticsOrgs($params = array())
     {
-        $this->loadModel('Organisation');
         $conditions = array();
         if (!isset($params['scope']) || $params['scope'] == 'local') {
             $params['scope'] = 'local';
@@ -1942,12 +2003,12 @@ class UsersController extends AppController
         } elseif ($params['scope'] == 'external') {
             $conditions['Organisation.local'] = 0;
         }
-        $orgs = $this->Organisation->find('all', array(
-                'recursive' => -1,
-                'conditions' => $conditions,
-                'fields' => array('id', 'name', 'description', 'local', 'contacts', 'type', 'sector', 'nationality'),
+        $orgs = $this->User->Organisation->find('all', array(
+            'recursive' => -1,
+            'conditions' => $conditions,
+            'fields' => array('id', 'name', 'description', 'local', 'contacts', 'type', 'sector', 'nationality'),
         ));
-        $orgs = Set::combine($orgs, '{n}.Organisation.id', '{n}.Organisation');
+        $orgs = array_column(array_column($orgs, 'Organisation'), null, 'id');
         $users = $this->User->find('all', array(
             'group' => 'User.org_id',
             'conditions' => array('User.org_id' => array_keys($orgs)),
@@ -2105,7 +2166,7 @@ class UsersController extends AppController
         }
     }
 
-    private function __statisticsGalaxyMatrix($params = array())
+    private function __statisticsGalaxyMatrix(array $user, $params = array())
     {
         $this->loadModel('Event');
         $this->loadModel('Galaxy');
@@ -2121,7 +2182,7 @@ class UsersController extends AppController
             'fields' => ['id', 'name'],
         ));
         foreach ($organisations as $id => $foo) {
-            if (!$this->User->Organisation->canSee($this->Auth->user(), $id)) {
+            if (!$this->User->Organisation->canSee($user, $id)) {
                 unset($organisations[$id]);
             }
         }
@@ -2160,7 +2221,7 @@ class UsersController extends AppController
             }
             $elementCounter = 0;
             $renderView = '';
-            $final = $this->Event->restSearch($this->Auth->user(), 'attack', $filters, false, false, $elementCounter, $renderView);
+            $final = $this->Event->restSearch($user, 'attack', $filters, false, false, $elementCounter, $renderView);
 
             $final = json_decode($final, true);
             if (!empty($final)) {
@@ -2264,9 +2325,6 @@ class UsersController extends AppController
 
     public function verifyGPG($full = false)
     {
-        if (!self::_isSiteAdmin()) {
-            throw new NotFoundException();
-        }
         $user_results = $this->User->verifyGPG($full);
         $this->set('users', $user_results);
     }
@@ -2404,6 +2462,7 @@ class UsersController extends AppController
                 throw new BadRequestException(__('We require at least the email field to be filled.'));
             }
             $this->User->set($requestObject);
+            unset($this->User->validate['email']['unique']);
             if (!$this->User->validates(array('fieldList' => $fieldToValidate))) {
                 $errors = $this->User->validationErrors;
                 $message = __('Request could not be created.');
@@ -2683,30 +2742,7 @@ class UsersController extends AppController
         if (!$this->request->is('post')) {
             throw new MethodNotAllowedException(__('This endpoint can only be triggered via POST requests.'));
         }
-        $users = $this->User->find('all', [
-            'recursive' => -1,
-            'contain' => ['AuthKey'],
-            'fields' => ['id', 'authkey']
-        ]);
-        $updated = 0;
-        foreach ($users as $user) {
-            if (!empty($user['AuthKey'])) {
-                $currentKeyStart = substr($user['User']['authkey'], 0, 4);
-                $currentKeyEnd = substr($user['User']['authkey'], -4);
-                foreach ($user['AuthKey'] as $authkey) {
-                    if ($authkey['authkey_start'] === $currentKeyStart && $authkey['authkey_end'] === $currentKeyEnd) {
-                        continue 2;
-                    }
-                }
-            }
-            $this->User->AuthKey->create();
-            $this->User->AuthKey->save([
-                'authkey' => $user['User']['authkey'],
-                'expiration' => 0,
-                'user_id' => $user['User']['id']
-            ]);
-            $updated += 1;
-        }
+        $updated = $this->User->updateToAdvancedAuthKeys();
         $message = __('The upgrade process is complete, %s authkey(s) generated.', $updated);
         if ($this->_isRest()) {
             return $this->RestResponse->saveSuccessResponse('User', 'acceptRegistrations', false, $this->response->type(), $message);

@@ -3,7 +3,7 @@ App::uses('AppModel', 'Model');
 
 class SharingGroupServer extends AppModel
 {
-    public $actsAs = array('Containable');
+    public $actsAs = array('AuditLog', 'Containable');
 
     public $belongsTo = array(
         'SharingGroup' => array(
@@ -97,14 +97,10 @@ class SharingGroupServer extends AppModel
     // pass a sharing group ID, returns true if it has the local server object attached with "all_orgs" set
     public function checkIfAuthorised($id)
     {
-        $sg = $this->find('first', array(
-                'conditions' => array('sharing_group_id' => $id, 'all_orgs' => 1, 'server_id' => 0),
-                'recursive' => -1,
-                'fields' => array('id'),
-        ));
-        if (!empty($sg)) {
-            return true;
-        }
-        return false;
+        return $this->hasAny([
+            'sharing_group_id' => $id,
+            'all_orgs' => 1,
+            'server_id' => 0
+        ]);
     }
 }

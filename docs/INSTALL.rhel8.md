@@ -1,10 +1,12 @@
-# INSTALLATION INSTRUCTIONS for RHEL 8.x, CentOS8/Stream
+# INSTALLATION INSTRUCTIONS for RHEL 8.x based distros
 -------------------------
 
-### -2/ RHEL8/CentOS8/CentOS_Stream/Fedora33 - status
+### -2/ RHEL8/Rocky8.4/Rocky8.5/Fedora34/Fedora35 - status
 -------------------------
 !!! notice
-    Tested fully working without SELinux by [@SteveClement](https://twitter.com/SteveClement) on 20210401
+    Tested fully working without SELinux by [@SteveClement](https://twitter.com/SteveClement) on 20210702
+
+!!! notice
     TODO: Fix SELinux permissions, *pull-requests welcome*.
 
 {!generic/manual-install-notes.md!}
@@ -16,20 +18,19 @@
 
 ### 0/ Overview and Assumptions
 
-{!generic/rhelVScentos.md!}
-
 !!! warning
     The core MISP team cannot easily verify if this guide is working or not. Please help us in keeping it up to date and accurate.
     Thus we also have difficulties in supporting RHEL issues but will do a best effort on a similar yet slightly different setup.
 
 !!! notice
     Maintenance for CentOS 8 will end on: December 31st, 2021 [Source[0]](https://wiki.centos.org/About/Product) [Source[1]](https://linuxlifecycle.com/)
+    Consider using [Rocky Linux](https://rockylinux.org/)
     CentOS 8 [NetInstallURL](http://mirrorlist.centos.org/?release=8&arch=x86_64&repo=BaseOS)
 
 {!generic/manual-install-notes.md!}
 
-This document details the steps to install MISP on Red Hat Enterprise Linux 8.x (RHEL 8.x) and CentOS 8.x.
-This is a joint RHEL/CentOS install guide. The authors tried to make it contextually evident what applies to which flavor.
+This document details the steps to install MISP on Red Hat Enterprise Linux 8.x (RHEL 8.x) and Rocky Linux 8.x.
+This is a joint RHEL/Rocky install guide. The authors tried to make it contextually evident what applies to which flavor.
 
 The following assumptions with regard to this installation have been made.
 
@@ -55,7 +56,7 @@ The following assumptions with regard to this installation have been made.
 
 ### 1/ OS Install and additional repositories
 
-## 1.1/ Complete a minimal RHEL/CentOS installation, configure IP address to connect automatically.
+## 1.1/ Complete a minimal RHEL/Rocky installation, configure IP address to connect automatically.
 
 ## 1.2/ Configure system hostname (if not done during install)
 ```bash
@@ -92,14 +93,14 @@ sudo dnf install drpm -y
 ## 1.5.b/ Install vim (optional)
 ```bash
 # Because (neo)vim is just so practical
-sudo dnf install neovim -y
+sudo dnf install neovim -y || sudo dnf install vim -y || echo "neovim is not in the catalog"
 # For RHEL, it's vim and after enabling epel neovim is available too
 ```
 
 ## 1.5.c/ Install ntpdate (optional)
 ```bash
 # In case you time is wrong, this will fix it.
-sudo dnf install ntpdate -y
+sudo dnf install ntpdate -y || sudo dnf install ntpsec -y || sudo dnf install chrony -y
 sudo ntpdate pool.ntp.org
 ```
 
@@ -120,12 +121,12 @@ enableEPEL_REMI_8 () {
   sudo dnf install http://rpms.remirepo.net/enterprise/remi-release-8.rpm -y
   sudo dnf install dnf-utils -y
   sudo dnf module enable php:remi-7.4 -y
-  [[ ${DISTRI} == "centos8stream" ]] && sudo dnf config-manager --set-enabled powertools
-  [[ ${DISTRI} == "centos8" ]] && sudo dnf config-manager --set-enabled powertools
+  ([[ ${DISTRI} == "centos8stream" ]] || [[ ${DISTRI} == "centos8" ]] || [[ ${DISTRI} == "rocky8.4" ]] || [[ ${DISTRI} == "rocky8.5" ]]) && sudo dnf config-manager --set-enabled powertools
 }
 
-enableREMI_f33 () {
-  sudo dnf install http://rpms.remirepo.net/fedora/remi-release-33.rpm
+enableREMI_fedora () {
+  [[ "${DISTRI%??}" == "fedora" ]] && sudo dnf install http://rpms.remirepo.net/fedora/remi-release-${DISTRI:6}.rpm -y
+  dnf list installed mod_lua && sudo dnf remove mod_lua -y
   sudo dnf install dnf-utils -y
   sudo dnf module enable php:remi-7.4 -y
 }
@@ -147,7 +148,8 @@ yumInstallCoreDeps8 () {
   # Install the dependencies:
   PHP_BASE="/etc/"
   PHP_INI="/etc/php.ini"
-  sudo dnf install @httpd -y
+  # If the install group @httpd is not existent, fallback to httpd
+  sudo dnf install @httpd -y || sudo dnf install httpd -y
   sudo dnf install gcc git zip unzip \
                    httpd \
                    mod_ssl \
@@ -160,7 +162,7 @@ yumInstallCoreDeps8 () {
                    policycoreutils-python-utils \
                    langpacks-en glibc-all-langpacks \
                    libxslt-devel zlib-devel ssdeep-devel -y
-  sudo alternatives --set python /usr/bin/python3
+  readlink -f /usr/bin/python | grep python3 || sudo alternatives --set python /usr/bin/python3
 
   # Enable and start redis
   sudo systemctl enable --now redis.service
@@ -238,7 +240,8 @@ compileLiefRHEL8 () {
 
   # The following adds a PYTHONPATH to where the pyLIEF module has been compiled
   echo /var/www/MISP/app/files/scripts/lief/build/api/python |$SUDO_WWW tee /var/www/MISP/venv/lib/python3.6/site-packages/lief.pth
-  [[ "${DISTRI}" == "fedora33" ]] && (echo /var/www/MISP/app/files/scripts/lief/build/api/python |$SUDO_WWW tee /var/www/MISP/venv/lib/python3.9/site-packages/lief.pth)
+  ([[ "${DISTRI}" == "fedora33" ]] || [[ ${DISTRI} == 'fedora34' ]]) && (echo /var/www/MISP/app/files/scripts/lief/build/api/python |$SUDO_WWW tee /var/www/MISP/venv/lib/python3.9/site-packages/lief.pth)
+  [[ "${DISTRI}" == "fedora35" ]] && (echo /var/www/MISP/app/files/scripts/lief/build/api/python |$SUDO_WWW tee /var/www/MISP/venv/lib/python3.10/site-packages/lief.pth)
 $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install -U python-magic plyara
 }
 
@@ -260,44 +263,25 @@ installCoreRHEL8 () {
   # Create a python3 virtualenv
   [[ -e $(which virtualenv-3 2>/dev/null) ]] && $SUDO_WWW virtualenv-3 -p python3 $PATH_TO_MISP/venv
   [[ -e $(which virtualenv 2>/dev/null) ]] && $SUDO_WWW virtualenv -p python3 $PATH_TO_MISP/venv
+  [[ ! -e ${PATH_TO_MISP}/venv ]] && ${SUDO_WWW} python -m venv ${PATH_TO_MISP}/venv
   sudo mkdir /usr/share/httpd/.cache
   sudo chown $WWW_USER:$WWW_USER /usr/share/httpd/.cache
   $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install -U pip setuptools
 
-  cd $PATH_TO_MISP/app/files/scripts
-  $SUDO_WWW git clone https://github.com/CybOXProject/python-cybox.git
-  $SUDO_WWW git clone https://github.com/STIXProject/python-stix.git
-  $SUDO_WWW git clone https://github.com/CybOXProject/mixbox.git
-
-  cd $PATH_TO_MISP/app/files/scripts/python-cybox
-  $SUDO_WWW git config core.filemode false
   # If you umask is has been changed from the default, it is a good idea to reset it to 0022 before installing python modules
-  ([[ ${DISTRI} == 'fedora33' ]] || [[ ${DISTRI} == 'rhel8.3' ]]) && sudo dnf install cmake3 -y && CMAKE_BIN='cmake3'
-  [[ ${DISTRI} == 'centos8stream' ]] && sudo dnf install cmake -y && CMAKE_BIN='cmake'
-  [[ ${DISTRI} == 'centos8' ]] && sudo dnf install cmake -y && CMAKE_BIN='cmake'
+  ([[ ${DISTRI} == 'fedora33' ]] || [[ ${DISTRI} == 'fedora34' ]] || [[ ${DISTRI} == 'fedora35' ]] || [[ ${DISTRI} == 'rhel8.3' ]] || [[ ${DISTRI} == 'rhel8.4' ]] || [[ ${DISTRI} == 'rhel8.5' ]]) && sudo dnf install cmake3 -y && CMAKE_BIN='cmake3'
+  ([[ ${DISTRI} == 'centos8stream' ]] || [[ ${DISTRI} == 'centos8' ]] || [[ ${DISTRI} == 'rocky8.4' ]] || [[ ${DISTRI} == 'rocky8.5' ]]) && sudo dnf install cmake -y && CMAKE_BIN='cmake'
 
   UMASK=$(umask)
   umask 0022
 
-  cd $PATH_TO_MISP/app/files/scripts/python-cybox
-  $SUDO_WWW git config core.filemode false
-  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install .
+  # install python-stix dependencies
+  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install ordered-set python-dateutil six weakrefmethod
+  debug "Install misp-stix"
+  ${SUDO_WWW} ${PATH_TO_MISP}/venv/bin/pip install ${PATH_TO_MISP}/app/files/scripts/misp-stix
 
-  cd $PATH_TO_MISP/app/files/scripts/python-stix
-  $SUDO_WWW git config core.filemode false
-  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install .
-
-  # install mixbox to accommodate the new STIX dependencies:
-  cd $PATH_TO_MISP/app/files/scripts/mixbox
-  $SUDO_WWW git config core.filemode false
-  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install .
-
-  # install STIX2.0 library to support STIX 2.0 export:
-  cd $PATH_TO_MISP/cti-python-stix2
-  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install .
-
-  # install maec, zmq, redis
-  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install -U maec zmq redis
+  # install zmq, redis
+  $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install -U zmq redis
 
   # install magic, pydeep
   $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install -U python-magic git+https://github.com/kbandla/pydeep.git plyara
@@ -310,7 +294,7 @@ installCoreRHEL8 () {
   $SUDO_WWW $PATH_TO_MISP/venv/bin/pip install -U .
 
   # FIXME: Remove libfaup etc once the egg has the library baked-in
-  # BROKEN: This needs to be tested on RHEL/CentOS
+  # BROKEN: This needs to be tested on RHEL/Rocky
   sudo dnf install libcaca-devel -y
   cd /tmp
   [[ ! -d "faup" ]] && $SUDO_CMD git clone https://github.com/stricaud/faup.git faup
@@ -355,7 +339,7 @@ installCake_RHEL ()
   sudo mkdir /usr/share/httpd/.composer
   sudo chown $WWW_USER:$WWW_USER /usr/share/httpd/.composer
   cd $PATH_TO_MISP/app
-  $SUDO_WWW php composer.phar install
+  $SUDO_WWW php composer.phar install --no-dev
 
   sudo dnf install php-pecl-redis php-pecl-ssdeep php-pecl-gnupg -y
 
@@ -694,11 +678,11 @@ configWorkersRHEL () {
 
 {!generic/MISP_CAKE_init.md!}
 
-{!generic/misp-modules-centos.md!}
+{!generic/misp-modules-rhel.md!}
 
 {!generic/misp-modules-cake.md!}
 
-{!generic/misp-dashboard-centos.md!}
+{!generic/misp-dashboard-rhel.md!}
 
 {!generic/misp-dashboard-cake.md!}
 
