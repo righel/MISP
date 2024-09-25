@@ -1985,7 +1985,7 @@ class MispAttribute extends AppModel
         $attributes = [];
         $skipped_items = 0;
 
-        if ($this->dataSource == "Database/Postgres") {
+        if ($this->dataSource == 'Database/PostgresExtended') {
             $index = $this->query("SELECT indexname FROM pg_indexes WHERE tablename='attributes' AND  indexname='attributes_deleted'");
         } else {
             $index = $this->query("SHOW index from attributes where Key_name = 'deleted'");
