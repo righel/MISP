@@ -115,6 +115,7 @@ class Event extends AppModel
         'hashes' => array('txt', 'HashesExport', 'txt'),
         'hosts' => array('txt', 'HostsExport', 'txt'),
         'json' => array('json', 'JsonExport', 'json'),
+        'kunai' => ['json', 'KunaiExport', 'json'],
         'netfilter' => array('txt', 'NetfilterExport', 'sh'),
         'opendata' => array('txt', 'OpendataExport', 'txt'),
         'openioc' => array('xml', 'OpeniocExport', 'ioc'),
@@ -6305,7 +6306,7 @@ class Event extends AppModel
         }
     }
 
-    public function enrichment($params)
+    public function enrichment(array $params)
     {
         $option_fields = array('user', 'event_id', 'modules');
         foreach ($option_fields as $option_field) {
@@ -6313,7 +6314,6 @@ class Event extends AppModel
                 throw new MethodNotAllowedException(__('%s not set', $option_field));
             }
         }
-        $event = [];
         if (!empty($params['attribute_uuids'])) {
             $attributes = $this->Attribute->fetchAttributes($params['user'], [
                 'conditions' => [
@@ -6333,13 +6333,16 @@ class Event extends AppModel
                 'includeAttachments' => 1,
                 'flatten' => 1,
             ]);
+            if (empty($event)) {
+                throw new MethodNotAllowedException('Invalid event.');
+            }
         }
+
         $this->Module = ClassRegistry::init('Module');
         $enabledModules = $this->Module->getEnabledModules($params['user']);
         if (empty($enabledModules) || is_string($enabledModules)) {
             return true;
         }
-        $options = array();
         foreach ($enabledModules['modules'] as $k => $temp) {
             if (isset($temp['meta']['config'])) {
                 $settings = array();
@@ -6349,9 +6352,7 @@ class Event extends AppModel
                 $enabledModules['modules'][$k]['config'] = $settings;
             }
         }
-        if (empty($event)) {
-            throw new MethodNotAllowedException('Invalid event.');
-        }
+
         $attributes_added = 0;
         $initial_objects = array();
         $event_id = $event[0]['Event']['id'];
@@ -6367,7 +6368,7 @@ class Event extends AppModel
                         if (!empty($module['config'])) {
                             $data['config'] = $module['config'];
                         }
-                        if (!empty($module['mispattributes']['format']) && $module['mispattributes']['format'] == 'misp_standard') {
+                        if (!empty($module['mispattributes']['format']) && $module['mispattributes']['format'] === 'misp_standard') {
                             $data['attribute'] = $attribute;
                         } else {
                             $data[$attribute['type']] = $attribute['value'];
@@ -6382,12 +6383,11 @@ class Event extends AppModel
                             throw new MethodNotAllowedException(h($module['name']) . ' service not reachable.');
                         } else if (!is_array($result)) {
                             continue 2;
+                        } else if (!isset($result['results'])) {
+                            throw new RuntimeException("Invalid response received from module {$module['name']}, response data do not contains results field.");
                         }
                         //if (isset($result['error'])) $this->Session->setFlash($result['error']);
-                        if (!is_array($result)) {
-                            throw new Exception($result);
-                        }
-                        if (!empty($module['mispattributes']['format']) && $module['mispattributes']['format'] == 'misp_standard') {
+                        if (!empty($module['mispattributes']['format']) && $module['mispattributes']['format'] === 'misp_standard') {
                             if ($object_id != '0' && !empty($initial_objects[$object_id])) {
                                 $result['initialObject'] = $initial_objects[$object_id];
                             }
@@ -6443,7 +6443,7 @@ class Event extends AppModel
                 }
                 $dataTag['Tag']['local'] = empty($dataTag['local']) ? false : true;
                 if (!isset($excludeGalaxy) || !$excludeGalaxy) {
-                    if (substr($dataTag['Tag']['name'], 0, strlen('misp-galaxy:')) === 'misp-galaxy:') {
+                    if (str_starts_with($dataTag['Tag']['name'], 'misp-galaxy:')) {
                         $cluster = $this->GalaxyCluster->getCluster($dataTag['Tag']['name'], $user);
                         if ($cluster) {
                             $found = false;
@@ -6711,6 +6711,12 @@ class Event extends AppModel
                 $this->Attribute->create();
                 if (empty($attribute['comment'])) {
                     $attribute['comment'] = $default_comment;
+                }
+                if (!isset($attribute['distribution'])) {
+                    $attribute['distribution'] = $this->Attribute->defaultDistribution();
+                }
+                if ($attribute['distribution'] != 4) {
+                    $attribute['sharing_group_id'] = 0;
                 }
                 if (!empty($attribute['data']) && !empty($attribute['encrypt'])) {
                     $attribute = $this->Attribute->onDemandEncrypt($attribute);
@@ -7094,6 +7100,12 @@ class Event extends AppModel
         $attribute['event_id'] = $event['Event']['id'];
         if (empty($attribute['comment']) && $default_comment) {
             $attribute['comment'] = $default_comment;
+        }
+        if (!isset($attribute['distribution'])) {
+            $attribute['distribution'] = $this->Attribute->defaultDistribution();
+        }
+        if ($attribute['distribution'] != 4) {
+            $attribute['sharing_group_id'] = 0;
         }
         if (!empty($attribute['data']) && !empty($attribute['encrypt'])) {
             $attribute = $this->Attribute->onDemandEncrypt($attribute);

@@ -22,6 +22,13 @@ $humanReadableFilesize = function ($bytes, $dec = 2) {
         echo __('Make sure that you update MISP regularly.');
     ?></p>
     <div class="diagnostics-box" style="width:100%">
+        <?php
+            if (!empty($version['new_major'])) {
+                echo '<span class="bold">' . __('A new major MISP release is available') . '</span>... <span class="blue bold">' . h($version['new_major']) . '</span> <span>Keep in mind that major versions require manual intervention, check out the <a href="https://github.com/MISP/MISP/releases/tag/v2.5.0">release</a>\'s instructions.</span><br />';
+            } else if (!empty($version['new_minor'])) {
+                echo '<span class="bold">' . __('A new major MISP release is available') . '</span>... <span class="blue bold">' . h($version['new_minor']) . '</span> <span>Keep in mind that major versions require manual intervention, check out the <a href="https://github.com/MISP/MISP/releases/tag/v2.5.0">release</a>\'s instructions.</span><br />';
+            }
+        ?>
         <span><?= __('Currently installed version…');?>
             <?php
                 $upToDate = isset($version['upToDate']) ? $version['upToDate'] : null;
@@ -75,16 +82,16 @@ $humanReadableFilesize = function ($bytes, $dec = 2) {
         </span><br>
         <span><?php echo __('Current branch…');?>
             <?php
-                $branchColour = $branch == '2.4' ? 'green' : ((!Configure::read('MISP.self_update') && Configure::check('MISP.self_update')) ? 'bold' : 'red bold');
+                $branchColour = $branch == '2.5' ? 'green' : ((!Configure::read('MISP.self_update') && Configure::check('MISP.self_update')) ? 'bold' : 'red bold');
                 ?>
             <span class="<?php echo h($branchColour); ?>">
                 <?php
-                  if ($branch == '2.4') {
+                  if ($branch == '2.5') {
                       h($branch);
                   } elseif (!Configure::read('MISP.self_update') && Configure::check('MISP.self_update')) {
-                      echo __('You are not on a branch, but since MISP self-update is disabled this is expected.');
+                      echo __('You are not on the expected branch, but since MISP self-update is disabled this is expected.');
                   } else {
-                      echo __('You are not on a branch, Update MISP will fail');
+                      echo __('You are not on the expected branch, Update MISP will fail, current branch: %s', h($branch));
                   }
                 ?>
             </span>
